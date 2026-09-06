@@ -216,14 +216,34 @@ class Session:
         if len(ids) > len(player.deck):
             raise ValueError("卡组数量不足")
         # Selection click order never changes zone order. Top is index zero.
+        # Capture the selected cards in current Hand order before moving them.
         chosen = set(ids)
         discarded = [c for c in player.hand if c.instance_id in chosen]
-        kept = [c for c in player.hand if c.instance_id not in chosen]
         count = len(discarded)
-        drawn = player.deck[:count]
-        player.control_room[0:0] = discarded
-        player.deck = player.deck[count:]
-        player.hand = kept + drawn
+
+        # Move selected cards in Hand order to the top of Control Room.
+        # Increasing destination indexes preserve the original Hand order.
+        for destination_index, card in enumerate(discarded):
+            self._move_card(
+                action.player_id,
+                Zone.HAND,
+                Zone.CONTROL_ROOM,
+                card_id=card.instance_id,
+                destination_index=destination_index,
+                reason="mulligan_discard",
+            )
+
+        # Draw replacements from Deck top, appending each to Hand newest/right side.
+        drawn = [
+            self._move_card(
+                action.player_id,
+                Zone.DECK,
+                Zone.HAND,
+                reason="mulligan_draw",
+            )
+            for _ in range(count)
+        ]
+
         state.mulligans_completed += 1
         canonical = MulliganAction(action.player_id, tuple(c.instance_id for c in discarded))
         self.actions.append(canonical)
@@ -265,7 +285,19 @@ class Session:
             face_up=True,
             reason="play",
         )
-        self.events.extend(resolve_stage_overlaps(player, action.player_id))
+        resolve_stage_overlaps(
+            player,
+            action.player_id,
+            lambda source_slot, card_id, destination_index: self._move_card(
+                action.player_id,
+                Zone.STAGE,
+                Zone.CONTROL_ROOM,
+                card_id=card_id,
+                source_slot=source_slot,
+                destination_index=destination_index,
+                reason="stage_overlap",
+            ),
+        )
         # Future ON_PLAY abilities must consume this event only after resolution.
         event = {"kind": "card_played", "player": action.player_id,
                  "card_id": card.instance_id, "slot": action.target_slot}

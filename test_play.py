@@ -5,7 +5,7 @@ import unittest
 
 from actions import AdvancePhaseAction, PlayCardAction
 from cards import CardDefinition
-from engine import Session, other
+from engine import Session, Zone, other
 from rule_resolution import STAGE_SLOTS, resolve_stage_overlaps
 from test_turns import opened
 
@@ -50,10 +50,29 @@ class PlayTests(unittest.TestCase):
         cards = player.hand[:3]
         del player.hand[:3]
         player.stage['back_left'] = list(cards)
-        events = resolve_stage_overlaps(player, session.state.current_player)
+
+        start = len(session.events)
+        resolve_stage_overlaps(
+            player,
+            session.state.current_player,
+            lambda source_slot, card_id, destination_index: session._move_card(
+                session.state.current_player,
+                Zone.STAGE,
+                Zone.CONTROL_ROOM,
+                card_id=card_id,
+                source_slot=source_slot,
+                destination_index=destination_index,
+                reason="stage_overlap",
+            ),
+        )
+
         self.assertEqual(cards[:1], player.stage['back_left'])
         self.assertEqual(cards[1:], player.control_room)
+
+        events = session.events[start:]
         self.assertEqual(2, len(events))
+        self.assertTrue(all(event["kind"] == "card_moved" for event in events))
+        self.assertTrue(all(event["reason"] == "stage_overlap" for event in events))
 
     def test_invalid_play_is_atomic(self):
         for case in ('phase', 'player', 'slot', 'card', 'kind', 'cost', 'level'):
