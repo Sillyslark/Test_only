@@ -1,0 +1,17 @@
+{
+  "name": "task-finished-notifier",
+  "version": "0.1.0",
+  "description": "Show a Windows popup and play a sound when a Codex turn stops.",
+  "author": {
+    "name": "Local developer"
+  },
+  "interface": {
+    "displayName": "Task Finished Notifier",
+    "shortDescription": "Windows popup and sound on turn completion.",
+    "longDescription": "A local Stop hook displays an eight-second notification and plays the Windows notification sound.",
+    "developerName": "Local developer",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Help me use Task Finished Notifier."
+  }
+}
