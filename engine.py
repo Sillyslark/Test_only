@@ -7,26 +7,23 @@ from actions import MulliganAction, AdvancePhaseAction, ClockAction, PlayCardAct
 from phases import PHASES
 from cards import Card
 from rule_resolution import STAGE_SLOTS, resolve_stage_overlaps
-
-from enum import Enum
+from zones import Zone
+from resolution import ResolutionContext, collect_triggers, resolve_pending_effects
 
 VERSION = 4
 CLOCK_CAPACITY = 50
 PLAYERS = ("P1", "P2")
 
-class Zone(str, Enum):
-    DECK = "deck"
-    HAND = "hand"
-    CONTROL_ROOM = "control_room"
-    CLOCK = "clock"
-    STAGE = "stage"
-
 @dataclass
 class PlayerState:
     deck: list[Card] = field(default_factory=list)
     hand: list[Card] = field(default_factory=list)
-    control_room: list[Card] = field(default_factory=list)
+    waiting_room: list[Card] = field(default_factory=list)
     clock: list[Card] = field(default_factory=list)
+    level: list[Card] = field(default_factory=list)
+    stock: list[Card] = field(default_factory=list)
+    memory: list[Card] = field(default_factory=list)
+    climax: list[Card] = field(default_factory=list)
     stage: dict[str, list[Card]] = field(default_factory=lambda: {slot: [] for slot in STAGE_SLOTS})
 
 
@@ -99,10 +96,18 @@ class Session:
             return player.deck
         if zone == Zone.HAND:
             return player.hand
-        if zone == Zone.CONTROL_ROOM:
-            return player.control_room
+        if zone == Zone.WAITING_ROOM:
+            return player.waiting_room
         if zone == Zone.CLOCK:
             return player.clock
+        if zone == Zone.LEVEL:
+            return player.level
+        if zone == Zone.STOCK:
+            return player.stock
+        if zone == Zone.MEMORY:
+            return player.memory
+        if zone == Zone.CLIMAX:
+            return player.climax
 
         if zone == Zone.STAGE:
             if slot not in STAGE_SLOTS:
@@ -227,7 +232,7 @@ class Session:
             self._move_card(
                 action.player_id,
                 Zone.HAND,
-                Zone.CONTROL_ROOM,
+                Zone.WAITING_ROOM,
                 card_id=card.instance_id,
                 destination_index=destination_index,
                 reason="mulligan_discard",
@@ -275,6 +280,13 @@ class Session:
             raise ValueError("该位置只能放置角色卡")
         if card.definition.level != 0 or card.definition.cost != 0:
             raise ValueError("当前测试版本仅支持 0 级 0 费角色，尚未实现等级检查和费用支付")
+        # Begin one timing / resolution point before the card enters Stage.
+        context = ResolutionContext(
+            turn_player=state.current_player,
+            non_turn_player=other(state.current_player),
+            event_cursor=len(self.events),
+        )
+
         card = self._move_card(
             action.player_id,
             Zone.HAND,
@@ -285,23 +297,36 @@ class Session:
             face_up=True,
             reason="play",
         )
+
+        # Mandatory rule handling for this timing: resolve Stage overlap first.
         resolve_stage_overlaps(
             player,
             action.player_id,
             lambda source_slot, card_id, destination_index: self._move_card(
                 action.player_id,
                 Zone.STAGE,
-                Zone.CONTROL_ROOM,
+                Zone.WAITING_ROOM,
                 card_id=card_id,
                 source_slot=source_slot,
                 destination_index=destination_index,
                 reason="stage_overlap",
             ),
         )
-        # Future ON_PLAY abilities must consume this event only after resolution.
+
+        # "Played" belongs to the same timing as entry / overlap consequences.
         event = {"kind": "card_played", "player": action.player_id,
                  "card_id": card.instance_id, "slot": action.target_slot}
         self.events.append(event)
+
+        # Collect only events created in this timing. Trigger collection is a
+        # placeholder today; later it will populate both players' pending pools.
+        new_events = context.capture_new_events(self.events)
+        collect_triggers(new_events, context)
+
+        # Turn-player effects must be exhausted before non-turn-player effects.
+        # Currently both pools are empty, so this is a no-op.
+        resolve_pending_effects(context)
+
         self.actions.append(action)
         self.hashes.append(state_hash(state))
         return event

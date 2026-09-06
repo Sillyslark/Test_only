@@ -113,6 +113,58 @@ class MoveCardTests(unittest.TestCase):
         self.assertEqual(expected, player.hand)
 
 
+    def test_new_zones_support_move_in_and_out(self):
+        """Level / Stock / Memory / Climax 都可以作为移动目标和来源。"""
+        session = Session(42)
+        player = session.state.players["P1"]
+
+        zones = (
+            Zone.LEVEL,
+            Zone.STOCK,
+            Zone.MEMORY,
+            Zone.CLIMAX,
+        )
+
+        for zone in zones:
+            with self.subTest(zone=zone):
+                chosen = player.hand[0]
+
+                # Hand -> 新区域
+                moved_in = session._move_card(
+                    "P1",
+                    Zone.HAND,
+                    zone,
+                    card_id=chosen.instance_id,
+                    reason="test_move_in",
+                )
+
+                target = session._get_zone("P1", zone)
+
+                self.assertEqual(chosen.instance_id, moved_in.instance_id)
+                self.assertIn(moved_in, target)
+                self.assertNotIn(
+                    chosen.instance_id,
+                    [card.instance_id for card in player.hand],
+                )
+
+                # 新区域 -> Hand
+                moved_out = session._move_card(
+                    "P1",
+                    zone,
+                    Zone.HAND,
+                    card_id=chosen.instance_id,
+                    reason="test_move_out",
+                )
+
+                self.assertEqual(chosen.instance_id, moved_out.instance_id)
+                self.assertIn(moved_out, player.hand)
+                self.assertNotIn(
+                    chosen.instance_id,
+                    [card.instance_id for card in target],
+                )
+
+
+
     def test_missing_card_is_atomic(self):
         """不存在的 card_id 必须失败，并且不能留下任何状态变化。"""
         session = Session(42)
@@ -217,8 +269,12 @@ class MoveCardTests(unittest.TestCase):
             for card in (
                 player.deck
                 + player.hand
-                + player.control_room
+                + player.waiting_room
                 + player.clock
+                + player.level
+                + player.stock
+                + player.memory
+                + player.climax
                 + sum(player.stage.values(), [])
             )
         }
@@ -235,8 +291,12 @@ class MoveCardTests(unittest.TestCase):
             for card in (
                 player.deck
                 + player.hand
-                + player.control_room
+                + player.waiting_room
                 + player.clock
+                + player.level
+                + player.stock
+                + player.memory
+                + player.climax
                 + sum(player.stage.values(), [])
             )
         }

@@ -29,6 +29,6 @@ def resolve_stage_overlaps(player, player_id, move_displaced):
 
         # Preserve the old behavior:
         # - cards displaced from the same slot keep their relative order;
-        # - they are inserted at the top of Control Room.
+        # - they are inserted at the top of Waiting Room.
         for destination_index, card_id in enumerate(displaced_ids):
             move_displaced(slot, card_id, destination_index)
