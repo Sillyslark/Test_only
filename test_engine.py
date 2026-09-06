@@ -11,7 +11,7 @@ class OpeningTests(unittest.TestCase):
         self.assertEqual(a.state, b.state)
         self.assertNotEqual(a.state.players, Session(43).state.players)
         for player in a.state.players.values():
-            self.assertEqual((5, 45, 0), (len(player.hand), len(player.deck), len(player.control_room)))
+            self.assertEqual((5, 45, 0), (len(player.hand), len(player.deck), len(player.waiting_room)))
             self.assertEqual(list(range(1, 51)), sorted(c.number for c in player.hand + player.deck))
         self.assertEqual({"P1", "P2"}, {Session(seed).state.first_player for seed in range(30)})
 
@@ -21,7 +21,7 @@ class OpeningTests(unittest.TestCase):
         player = session.state.players[first]
         hand, deck = list(player.hand), list(player.deck)
         session.dispatch(MulliganAction(first, (hand[3].instance_id, hand[1].instance_id)))
-        self.assertEqual([hand[1], hand[3]], player.control_room)
+        self.assertEqual([hand[1], hand[3]], player.waiting_room)
         self.assertEqual([hand[0], hand[2], hand[4]] + deck[:2], player.hand)
         self.assertEqual(deck[2:], player.deck)
         self.assertEqual(other(first), session.state.actor)
@@ -29,7 +29,7 @@ class OpeningTests(unittest.TestCase):
         session.dispatch(MulliganAction(second, tuple(c.instance_id for c in session.state.players[second].hand)))
         self.assertIsNone(session.state.actor)
         for player in session.state.players.values():
-            cards = player.hand + player.deck + player.control_room
+            cards = player.hand + player.deck + player.waiting_room
             self.assertEqual(50, len({c.instance_id for c in cards}))
             self.assertEqual(list(range(1, 51)), sorted(c.number for c in cards))
             self.assertEqual(5, len(player.hand))

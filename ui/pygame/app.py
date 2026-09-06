@@ -10,7 +10,7 @@ pg = layout.pygame
 SLOTS = {'FRONT L': 'front_left', 'FRONT C': 'front_center', 'FRONT R': 'front_right',
          'BACK L': 'back_left', 'BACK R': 'back_right'}
 NAMES = dict(zip(SLOTS.values(), ('前列左', '前列中', '前列右', '后列左', '后列右')))
-ZONES = {'deck': '卡组', 'control_room': '控制室', 'clock': '计时区'}
+ZONES = {'deck': '卡组', 'waiting_room': '控制室', 'clock': '计时区'}
 
 
 class PygameApp:
@@ -177,7 +177,7 @@ class PygameApp:
         for pid, prefix in (('P1', 'lower'), ('P2', 'upper')):
             for label, rect in self.zones[prefix+'_single']:
                 rect = self.shown(rect)
-                zone = {'卡组': 'deck', '控制室': 'control_room'}.get(label)
+                zone = {'卡组': 'deck', '控制室': 'waiting_room'}.get(label)
                 pg.draw.rect(surface, (233, 235, 238), rect)
                 pg.draw.rect(surface, (65, 70, 78), rect, 1)
                 content = f'{pid} {label}\n未实现'

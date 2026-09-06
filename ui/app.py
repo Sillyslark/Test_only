@@ -96,7 +96,7 @@ class App(tk.Tk):
             for slot in clock_slots(player.clock):
                 text = "空位" if slot is None else f"位置 #{slot[0]} · 卡 {slot[1].number}\n{slot[1].instance_id}" + (" · 底部" if slot[0] == len(player.clock) else "")
                 ttk.Label(clock_row, text=text, width=16, relief="solid", padding=4).pack(side="left", padx=2)
-            for label, zone in (("卡组", "deck"), ("控制室", "control_room")):
+            for label, zone in (("卡组", "deck"), ("控制室", "waiting_room")):
                 ttk.Button(frame, text=f"{label}\n{len(getattr(player, zone))} 张\n点击查看顺序",
                            command=lambda p=pid, z=zone, l=label: self.inspect(p, z, l), width=16).pack(side="left", padx=(0, 12), ipady=16)
             hand = ttk.Frame(frame)

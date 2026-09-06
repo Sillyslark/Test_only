@@ -33,11 +33,11 @@ class PlayTests(unittest.TestCase):
         start = len(session.events)
         session.dispatch(PlayCardAction(state.current_player, new.instance_id, STAGE_SLOTS[0]))
         self.assertEqual([new], player.stage[STAGE_SLOTS[0]])
-        self.assertEqual(old, player.control_room[0])
+        self.assertEqual(old, player.waiting_room[0])
         events = session.events[start:]
         self.assertEqual(['card_moved', 'card_moved', 'card_played'], [e['kind'] for e in events])
         self.assertEqual('stage_overlap', events[1]['reason'])
-        cards = player.deck + player.hand + player.clock + player.control_room + [c for zone in player.stage.values() for c in zone]
+        cards = player.deck + player.hand + player.clock + player.waiting_room + [c for zone in player.stage.values() for c in zone]
         self.assertEqual(50, len(cards))
         self.assertEqual(50, len({c.instance_id for c in cards}))
         restored = Session.from_replay(json.loads(json.dumps(session.replay_data())))
@@ -58,7 +58,7 @@ class PlayTests(unittest.TestCase):
             lambda source_slot, card_id, destination_index: session._move_card(
                 session.state.current_player,
                 Zone.STAGE,
-                Zone.CONTROL_ROOM,
+                Zone.WAITING_ROOM,
                 card_id=card_id,
                 source_slot=source_slot,
                 destination_index=destination_index,
@@ -67,7 +67,7 @@ class PlayTests(unittest.TestCase):
         )
 
         self.assertEqual(cards[:1], player.stage['back_left'])
-        self.assertEqual(cards[1:], player.control_room)
+        self.assertEqual(cards[1:], player.waiting_room)
 
         events = session.events[start:]
         self.assertEqual(2, len(events))

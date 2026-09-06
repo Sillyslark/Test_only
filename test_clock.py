@@ -28,7 +28,10 @@ class ClockTests(unittest.TestCase):
         self.assertEqual(before.deck[2:], player.deck)
         self.assertEqual('clock', state.phase)
         self.assertTrue(state.clock_used)
-        self.assertEqual(50, len({c.instance_id for c in player.hand + player.deck + player.control_room + player.clock}))
+        self.assertEqual(50, len({
+            c.instance_id
+            for c in player.hand + player.deck + player.waiting_room + player.clock
+        }))
         restored = Session.from_replay(json.loads(json.dumps(session.replay_data())))
         self.assertEqual(state, restored.state)
         self.assertEqual(session.events, restored.events)

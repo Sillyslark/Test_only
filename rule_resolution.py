@@ -32,3 +32,56 @@ def resolve_stage_overlaps(player, player_id, move_displaced):
         # - they are inserted at the top of Waiting Room.
         for destination_index, card_id in enumerate(displaced_ids):
             move_displaced(slot, card_id, destination_index)
+
+
+def level_up_candidates(player):
+    """Return the seven cards eligible for one level-up, top-first within that group.
+
+    Storage convention is top-first for every ordered zone. Therefore the
+    eligible group is always the bottom seven cards of Clock.
+    """
+    if len(player.clock) < 7:
+        return ()
+    return tuple(player.clock[-7:])
+
+
+def resolve_level_up(player, player_id, choose_level_card, move_to_level, move_to_waiting):
+    """Resolve one level-up if Clock contains at least seven cards.
+
+    The eligible cards are the bottom seven cards of Clock. ``choose_level_card``
+    returns the instance_id of the card that becomes the new Level card.
+    All six remaining eligible cards move individually to Waiting Room.
+
+    This function resolves exactly one level-up. The engine's interrupt loop is
+    responsible for calling it again while Clock still contains seven or more.
+    """
+    if not callable(choose_level_card):
+        raise ValueError("choose_level_card 必须是可调用对象")
+    if not callable(move_to_level) or not callable(move_to_waiting):
+        raise ValueError("升级移动回调必须是可调用对象")
+
+    candidates = level_up_candidates(player)
+    if not candidates:
+        return None
+
+    candidate_ids = tuple(card.instance_id for card in candidates)
+    chosen_id = choose_level_card(player_id, candidates)
+
+    if chosen_id not in candidate_ids:
+        raise ValueError("升级选择必须来自计时区底部七张牌")
+
+    # Move the selected Level card first.
+    move_to_level(chosen_id)
+
+    # Preserve the remaining eligible cards' relative top-first order while
+    # inserting this whole batch at the top of Waiting Room.
+    discarded_ids = tuple(card_id for card_id in candidate_ids if card_id != chosen_id)
+    for destination_index, card_id in enumerate(discarded_ids):
+        move_to_waiting(card_id, destination_index)
+
+    return {
+        "player": player_id,
+        "candidates": candidate_ids,
+        "chosen": chosen_id,
+        "discarded": discarded_ids,
+    }

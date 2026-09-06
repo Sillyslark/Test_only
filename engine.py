@@ -6,7 +6,7 @@ import random
 from actions import MulliganAction, AdvancePhaseAction, ClockAction, PlayCardAction
 from phases import PHASES
 from cards import Card
-from rule_resolution import STAGE_SLOTS, resolve_stage_overlaps
+from rule_resolution import STAGE_SLOTS, resolve_stage_overlaps, resolve_level_up
 from zones import Zone
 from resolution import ResolutionContext, collect_triggers, resolve_pending_effects
 
@@ -200,6 +200,74 @@ class Session:
 
         return card
 
+    def _choose_level_card(self, player_id, candidates):
+        """Choice hook for Level Up.
+
+        ``candidates`` is the bottom seven Clock cards, kept in storage
+        top-first order. The current deterministic default chooses the first
+        card counted from the bottom, i.e. the last candidate.
+
+        A future UI choice flow can replace/override this hook.
+        """
+        if not candidates:
+            raise ValueError("没有可供升级选择的牌")
+        return candidates[-1].instance_id
+
+    def _resolve_level_up(self, player_id):
+        """Resolve exactly one Level Up and emit its timing events."""
+        player = self.state.players[player_id]
+        if len(player.clock) < 7:
+            return None
+
+        # Snapshot the candidates for the start event before any movement.
+        candidate_ids = tuple(card.instance_id for card in player.clock[-7:])
+        self.events.append({
+            "kind": "level_up_started",
+            "player": player_id,
+            "candidates": list(candidate_ids),
+        })
+
+        result = resolve_level_up(
+            player,
+            player_id,
+            self._choose_level_card,
+            lambda card_id: self._move_card(
+                player_id,
+                Zone.CLOCK,
+                Zone.LEVEL,
+                card_id=card_id,
+                destination_index=0,
+                reason="level_up",
+            ),
+            lambda card_id, destination_index: self._move_card(
+                player_id,
+                Zone.CLOCK,
+                Zone.WAITING_ROOM,
+                card_id=card_id,
+                destination_index=destination_index,
+                reason="level_up_discard",
+            ),
+        )
+
+        self.events.append({
+            "kind": "level_up_completed",
+            "player": player_id,
+            "chosen": result["chosen"],
+            "discarded": list(result["discarded"]),
+        })
+        return result
+
+    def _resolve_interrupt_rules(self, player_id):
+        """Resolve all currently-required interrupt rules for one player.
+
+        Level Up is the first implemented interrupt rule. The loop matters:
+        a Clock with 14+ cards can require multiple consecutive Level Ups before
+        the interrupted action resumes.
+        """
+        player = self.state.players[player_id]
+        while len(player.clock) >= 7:
+            self._resolve_level_up(player_id)
+
     def dispatch(self, action: MulliganAction | AdvancePhaseAction | ClockAction | PlayCardAction):
         if isinstance(action, PlayCardAction):
             return self._play_card(action)
@@ -355,6 +423,10 @@ class Session:
             destination_index=0,
             reason="clock",
         )
+
+        # Interrupt checkpoint: Level Up must fully resolve before ClockAction
+        # continues to draw two replacement cards.
+        self._resolve_interrupt_rules(action.player_id)
 
         drawn = [
             self._move_card(
