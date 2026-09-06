@@ -8,10 +8,18 @@ from phases import PHASES
 from cards import Card
 from rule_resolution import STAGE_SLOTS, resolve_stage_overlaps
 
+from enum import Enum
+
 VERSION = 4
 CLOCK_CAPACITY = 50
 PLAYERS = ("P1", "P2")
 
+class Zone(str, Enum):
+    DECK = "deck"
+    HAND = "hand"
+    CONTROL_ROOM = "control_room"
+    CLOCK = "clock"
+    STAGE = "stage"
 
 @dataclass
 class PlayerState:
@@ -81,6 +89,112 @@ class Session:
         self.events = [{"kind": "game_started", "seed": seed, "first_player": first}]
         self.hashes = [state_hash(self.state)]
 
+    def _get_zone(self, player_id, zone, slot=None):
+        if player_id not in PLAYERS:
+            raise ValueError("玩家无效")
+
+        player = self.state.players[player_id]
+
+        if zone == Zone.DECK:
+            return player.deck
+        if zone == Zone.HAND:
+            return player.hand
+        if zone == Zone.CONTROL_ROOM:
+            return player.control_room
+        if zone == Zone.CLOCK:
+            return player.clock
+
+        if zone == Zone.STAGE:
+            if slot not in STAGE_SLOTS:
+                raise ValueError("舞台位置无效")
+            return player.stage[slot]
+
+        raise ValueError("未知区域")
+
+
+    def _move_card(
+        self,
+        player_id,
+        source,
+        destination,
+        *,
+        card_id=None,
+        source_slot=None,
+        destination_slot=None,
+        destination_index=None,
+        face_up=None,
+        reason=None,
+    ):
+        # Internal engine primitive only. Match operations must enter through dispatch().
+        if not isinstance(source, Zone) or not isinstance(destination, Zone):
+            raise ValueError("区域必须使用 Zone 枚举")
+
+        if face_up is not None and type(face_up) is not bool:
+            raise ValueError("face_up 必须是布尔值或 None")
+
+        source_zone = self._get_zone(player_id, source, source_slot)
+        destination_zone = self._get_zone(player_id, destination, destination_slot)
+
+        # Validate the source card before mutating anything.
+        if card_id is None:
+            if not source_zone:
+                raise ValueError("来源区域为空")
+            source_index = 0
+        else:
+            source_index = next(
+                (
+                    i
+                    for i, card in enumerate(source_zone)
+                    if card.instance_id == card_id
+                ),
+                None,
+            )
+            if source_index is None:
+                raise ValueError("指定卡牌不在来源区域")
+
+        # Validate destination index before pop(). Python list.insert() silently
+        # accepts negative / oversized values, which is undesirable for rules code.
+        if destination_index is not None:
+            if type(destination_index) is not int:
+                raise ValueError("目标位置必须是整数或 None")
+            if destination_index < 0 or destination_index > len(destination_zone):
+                raise ValueError("目标位置超出区域范围")
+
+        # Same-zone moves need index adjustment after removal when moving an
+        # earlier card to a later position.
+        adjusted_destination_index = destination_index
+        if (
+            source_zone is destination_zone
+            and adjusted_destination_index is not None
+            and source_index < adjusted_destination_index
+        ):
+            adjusted_destination_index -= 1
+
+        source_name = source_slot if source == Zone.STAGE else source.value
+        destination_name = destination_slot if destination == Zone.STAGE else destination.value
+
+        # All validation has completed; mutation begins here.
+        card = source_zone.pop(source_index)
+
+        if face_up is not None:
+            card = replace(card, face_up=face_up)
+
+        if adjusted_destination_index is None:
+            destination_zone.append(card)
+        else:
+            destination_zone.insert(adjusted_destination_index, card)
+
+        self.events.append({
+            "kind": "card_moved",
+            "player": player_id,
+            "card_id": card.instance_id,
+            "source": source_name,
+            "destination": destination_name,
+            "reason": reason,
+        })
+
+        return card
+
     def dispatch(self, action: MulliganAction | AdvancePhaseAction | ClockAction | PlayCardAction):
         if isinstance(action, PlayCardAction):
             return self._play_card(action)
@@ -141,11 +255,16 @@ class Session:
             raise ValueError("该位置只能放置角色卡")
         if card.definition.level != 0 or card.definition.cost != 0:
             raise ValueError("当前测试版本仅支持 0 级 0 费角色，尚未实现等级检查和费用支付")
-        player.hand.remove(card)
-        player.stage[action.target_slot].insert(0, replace(card, face_up=True))
-        self.events.append({"kind": "card_moved", "player": action.player_id,
-                            "card_id": card.instance_id, "source": "hand",
-                            "destination": action.target_slot, "reason": "play"})
+        card = self._move_card(
+            action.player_id,
+            Zone.HAND,
+            Zone.STAGE,
+            card_id=action.card_id,
+            destination_slot=action.target_slot,
+            destination_index=0,
+            face_up=True,
+            reason="play",
+        )
         self.events.extend(resolve_stage_overlaps(player, action.player_id))
         # Future ON_PLAY abilities must consume this event only after resolution.
         event = {"kind": "card_played", "player": action.player_id,
@@ -171,14 +290,27 @@ class Session:
             raise ValueError("计时区已达到 50 张容量上限")
         if len(player.deck) < 2:
             raise ValueError("卡组不足 2 张，无法执行计时操作；尚未实现卡组刷新")
-        drawn = player.deck[:2]
-        player.hand.remove(card)
-        player.clock.insert(0, card)
-        del player.deck[:2]
-        player.hand.extend(drawn)
+        clocked = self._move_card(
+            action.player_id,
+            Zone.HAND,
+            Zone.CLOCK,
+            card_id=action.card_id,
+            destination_index=0,
+            reason="clock",
+        )
+
+        drawn = [
+            self._move_card(
+                action.player_id,
+                Zone.DECK,
+                Zone.HAND,
+                reason="clock_draw",
+            )
+            for _ in range(2)
+        ]
         state.clock_used = True
         event = {"kind": "card_clocked", "player": action.player_id,
-                 "card_id": card.instance_id, "drawn": [c.instance_id for c in drawn]}
+                 "card_id": clocked.instance_id, "drawn": [c.instance_id for c in drawn]}
         self.events.append(event)
         self.actions.append(action)
         self.hashes.append(state_hash(state))
@@ -204,8 +336,12 @@ class Session:
                  "player": state.current_player, "turn": state.turn_number, "phase": next_phase}
         self.events.append(event)
         if next_phase == "draw":
-            card = player.deck.pop(0)
-            player.hand.append(card)
+            card = self._move_card(
+                state.current_player,
+                Zone.DECK,
+                Zone.HAND,
+                reason="draw",
+            )
             self.events.append({"kind": "card_drawn", "player": state.current_player,
                                 "card_id": card.instance_id, "turn": state.turn_number})
         self.actions.append(action)
