@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from typing import Callable, Any
+from enum import Enum
 
 
 @dataclass
@@ -89,3 +90,9 @@ def resolve_pending_effects(
 
             pool.remove(effect)
             resolve_effect(effect, context)
+
+
+
+class InterruptRule(str, Enum):
+    LEVEL_UP = "level_up"
+    REFRESH = "refresh"

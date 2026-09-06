@@ -1,0 +1,12 @@
+{
+  "code": "T-001",
+  "name": "测试",
+  "kind": "character",
+  "color": "yellow",
+  "level": 0,
+  "cost": 0,
+  "power": 500,
+  "soul": 1,
+  "traits": [],
+  "trigger_marks": []
+}

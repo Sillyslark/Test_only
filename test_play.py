@@ -2,7 +2,7 @@ from copy import deepcopy
 from dataclasses import replace
 import json
 import unittest
-
+from cards import T_001
 from actions import AdvancePhaseAction, PlayCardAction
 from cards import CardDefinition
 from engine import Session, Zone, other
@@ -22,7 +22,10 @@ class PlayTests(unittest.TestCase):
         session = at_main()
         state = session.state
         player = state.players[state.current_player]
-        self.assertEqual(CardDefinition(), player.hand[0].definition)
+        self.assertEqual(
+            T_001,
+            player.hand[0].definition
+        )
         for slot in STAGE_SLOTS:
             card = player.hand[0]
             session.dispatch(PlayCardAction(state.current_player, card.instance_id, slot))

@@ -5,10 +5,11 @@ import json
 import random
 from actions import MulliganAction, AdvancePhaseAction, ClockAction, PlayCardAction
 from phases import PHASES
-from cards import Card
-from rule_resolution import STAGE_SLOTS, resolve_stage_overlaps, resolve_level_up
+from rule_resolution import STAGE_SLOTS, resolve_stage_overlaps, resolve_level_up, resolve_refresh
 from zones import Zone
-from resolution import ResolutionContext, collect_triggers, resolve_pending_effects
+from resolution import ResolutionContext, collect_triggers, resolve_pending_effects, InterruptRule
+from cards import Card, T_001
+from deck_loader import build_deck, TEST_ALL_T_001
 
 VERSION = 4
 CLOCK_CAPACITY = 50
@@ -78,7 +79,10 @@ class Session:
         first = rng.choice(PLAYERS)
         players = {}
         for player in PLAYERS:
-            cards = [Card(f"{player}-{n:02}", n) for n in range(1, 51)]
+            cards = build_deck(
+                TEST_ALL_T_001,
+                player,
+            )
             rng.shuffle(cards)
             players[player] = PlayerState(deck=cards[5:], hand=cards[:5])
         self.state = GameState(seed, first, players, rng.getstate())
@@ -257,16 +261,148 @@ class Session:
         })
         return result
 
-    def _resolve_interrupt_rules(self, player_id):
-        """Resolve all currently-required interrupt rules for one player.
-
-        Level Up is the first implemented interrupt rule. The loop matters:
-        a Clock with 14+ cards can require multiple consecutive Level Ups before
-        the interrupted action resumes.
-        """
+    def _available_interrupt_rules(self, player_id):
+        """Return all currently-valid same-priority interrupt rules."""
         player = self.state.players[player_id]
-        while len(player.clock) >= 7:
-            self._resolve_level_up(player_id)
+        rules = []
+
+        if len(player.clock) >= 7:
+            rules.append(InterruptRule.LEVEL_UP)
+
+        if not player.deck and player.waiting_room:
+            rules.append(InterruptRule.REFRESH)
+
+        return tuple(rules)
+
+    def _choose_interrupt_rule(self, player_id, rules):
+        """Choice hook used when multiple same-priority interrupts are valid.
+
+        The current deterministic default chooses Refresh first. A future UI
+        should replace/override this hook with an actual player choice.
+        """
+        if not rules:
+            raise ValueError("没有可选择的中断规则")
+
+        if InterruptRule.REFRESH in rules:
+            return InterruptRule.REFRESH
+
+        return rules[0]
+
+    def _resolve_interrupt_rule(self, player_id, rule):
+        if rule == InterruptRule.LEVEL_UP:
+            return self._resolve_level_up(player_id)
+
+        if rule == InterruptRule.REFRESH:
+            return self._resolve_refresh_once(player_id)
+
+        raise ValueError("未知中断规则")
+
+    def _resolve_interrupt_rules(self, player_id):
+        """Resolve interrupts until the game returns to an interrupt-stable state.
+
+        After every resolved rule, availability is recalculated from the new
+        game state. Multiple same-priority rules require a player choice.
+        """
+        while True:
+            rules = self._available_interrupt_rules(player_id)
+
+            if not rules:
+                return
+
+            if len(rules) == 1:
+                chosen = rules[0]
+            else:
+                chosen = self._choose_interrupt_rule(player_id, rules)
+
+                if chosen not in rules:
+                    raise ValueError("选择的中断规则当前不可处理")
+
+                self.events.append({
+                    "kind": "interrupt_rule_chosen",
+                    "player": player_id,
+                    "options": [rule.value for rule in rules],
+                    "chosen": chosen.value,
+                })
+
+            self._resolve_interrupt_rule(player_id, chosen)
+
+    def _shuffle_deck(self, player_id):
+        """Shuffle Deck using the match RNG timeline and persist its new state."""
+        player = self.state.players[player_id]
+        rng = random.Random()
+        rng.setstate(self.state.rng_state)
+        rng.shuffle(player.deck)
+        self.state.rng_state = rng.getstate()
+        self.events.append({
+            "kind": "deck_shuffled",
+            "player": player_id,
+            "reason": "refresh",
+        })
+
+    def _resolve_refresh_once(self, player_id):
+        """Resolve exactly one Deck refresh, if required and possible."""
+        player = self.state.players[player_id]
+        if player.deck or not player.waiting_room:
+            return None
+
+        self.events.append({
+            "kind": "refresh_started",
+            "player": player_id,
+            "count": len(player.waiting_room),
+        })
+
+        result = resolve_refresh(
+            player,
+            player_id,
+            lambda card_id: self._move_card(
+                player_id,
+                Zone.WAITING_ROOM,
+                Zone.DECK,
+                card_id=card_id,
+                reason="refresh_rebuild",
+            ),
+            lambda: self._shuffle_deck(player_id),
+            lambda: self._move_card(
+                player_id,
+                Zone.DECK,
+                Zone.CLOCK,
+                destination_index=0,
+                reason="refresh_point",
+            ),
+        )
+
+        self.events.append({
+            "kind": "refresh_completed",
+            "player": player_id,
+            "refresh_point": result["refresh_point"],
+            "recycled": list(result["recycled"]),
+        })
+
+        return result
+
+    def _resolve_refresh_if_needed(self, player_id):
+        """Compatibility helper: enter the generalized interrupt loop."""
+        self._resolve_interrupt_rules(player_id)
+
+    def _draw_one(self, player_id, *, reason):
+        """Move one card from Deck to Hand with interrupt checkpoints around it."""
+        player = self.state.players[player_id]
+
+        self._resolve_interrupt_rules(player_id)
+        if not player.deck:
+            raise ValueError("牌库为空且控制室无牌，无法抽牌")
+
+        card = self._move_card(
+            player_id,
+            Zone.DECK,
+            Zone.HAND,
+            reason=reason,
+        )
+
+        # The next atomic step may not begin until all interrupts caused by this
+        # movement are fully resolved.
+        self._resolve_interrupt_rules(player_id)
+        return card
 
     def dispatch(self, action: MulliganAction | AdvancePhaseAction | ClockAction | PlayCardAction):
         if isinstance(action, PlayCardAction):
@@ -413,8 +549,8 @@ class Session:
             raise ValueError("请选择当前玩家的一张手牌")
         if len(player.clock) >= CLOCK_CAPACITY:
             raise ValueError("计时区已达到 50 张容量上限")
-        if len(player.deck) < 2:
-            raise ValueError("卡组不足 2 张，无法执行计时操作；尚未实现卡组刷新")
+        if len(player.deck) < 2 and not player.waiting_room:
+            raise ValueError("可用牌不足，无法完成计时阶段的抽 2")
         clocked = self._move_card(
             action.player_id,
             Zone.HAND,
@@ -429,12 +565,7 @@ class Session:
         self._resolve_interrupt_rules(action.player_id)
 
         drawn = [
-            self._move_card(
-                action.player_id,
-                Zone.DECK,
-                Zone.HAND,
-                reason="clock_draw",
-            )
+            self._draw_one(action.player_id, reason="clock_draw")
             for _ in range(2)
         ]
         state.clock_used = True
@@ -454,8 +585,8 @@ class Session:
         index = PHASES.index(state.phase)
         next_phase = PHASES[(index + 1) % len(PHASES)]
         player = state.players[state.current_player]
-        if next_phase == "draw" and not player.deck:
-            raise ValueError("卡组为空，无法进入抽卡阶段；当前版本尚未实现卡组刷新")
+        if next_phase == "draw" and not player.deck and not player.waiting_room:
+            raise ValueError("牌库为空且控制室无牌，无法进入抽卡阶段")
         if next_phase == "stand":
             state.current_player = other(state.current_player)
             state.turn_number += 1
@@ -465,12 +596,7 @@ class Session:
                  "player": state.current_player, "turn": state.turn_number, "phase": next_phase}
         self.events.append(event)
         if next_phase == "draw":
-            card = self._move_card(
-                state.current_player,
-                Zone.DECK,
-                Zone.HAND,
-                reason="draw",
-            )
+            card = self._draw_one(state.current_player, reason="draw")
             self.events.append({"kind": "card_drawn", "player": state.current_player,
                                 "card_id": card.instance_id, "turn": state.turn_number})
         self.actions.append(action)

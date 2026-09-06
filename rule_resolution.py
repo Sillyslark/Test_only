@@ -85,3 +85,38 @@ def resolve_level_up(player, player_id, choose_level_card, move_to_level, move_t
         "chosen": chosen_id,
         "discarded": discarded_ids,
     }
+
+
+def resolve_refresh(player, player_id, move_to_deck, shuffle_deck, move_refresh_point):
+    """Resolve one deck refresh.
+
+    All cards in Waiting Room are moved to Deck one-by-one, then Deck is
+    shuffled, then the new top card is moved to Clock as the refresh point.
+
+    This function resolves exactly one refresh. Any further interrupt checks
+    (for example Level Up caused by the refresh point) are owned by the engine.
+    """
+    if player.deck:
+        return None
+    if not player.waiting_room:
+        return None
+    if not callable(move_to_deck) or not callable(shuffle_deck) or not callable(move_refresh_point):
+        raise ValueError("刷新回调必须是可调用对象")
+
+    waiting_ids = tuple(card.instance_id for card in player.waiting_room)
+
+    for card_id in waiting_ids:
+        move_to_deck(card_id)
+
+    shuffle_deck()
+
+    if not player.deck:
+        raise RuntimeError("刷新后牌库为空")
+
+    refresh_point = move_refresh_point()
+
+    return {
+        "player": player_id,
+        "recycled": waiting_ids,
+        "refresh_point": refresh_point.instance_id,
+    }

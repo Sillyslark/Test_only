@@ -1,7 +1,7 @@
 from copy import deepcopy
 import json
 import unittest
-
+from cards import Card, T_001
 from actions import AdvancePhaseAction, ClockAction
 from engine import Card, Session, other, state_hash
 from test_turns import opened
@@ -55,7 +55,14 @@ class ClockTests(unittest.TestCase):
                 session.dispatch(ClockAction(actor, cid))
                 cid = player.hand[0].instance_id
             elif case == 'full':
-                player.clock = [Card(f'extra-{i}', i) for i in range(50)]
+                player.clock = [
+                    Card(
+                        f'extra-{i}',
+                        i,
+                        definition=T_001,
+                    )
+                    for i in range(50)
+                ]
             else:
                 player.deck = player.deck[:1]
             before = deepcopy(session.__dict__)
@@ -78,7 +85,10 @@ class ClockTests(unittest.TestCase):
         self.assertFalse(session.state.clock_used)
 
     def test_bottom_six_keep_top_based_positions(self):
-        cards = [Card(str(i), i) for i in range(50)]
+        cards = [
+            Card(str(i), i, definition=T_001)
+            for i in range(50)
+        ]
         self.assertEqual([None] * 6, clock_slots([]))
         self.assertEqual([(1, cards[0])] + [None] * 5, clock_slots(cards[:1]))
         self.assertEqual(list(reversed(list(enumerate(cards, 1))))[:6], clock_slots(cards))
