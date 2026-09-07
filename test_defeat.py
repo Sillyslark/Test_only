@@ -41,7 +41,7 @@ class DefeatTests(unittest.TestCase):
         # The defeat condition exists, but this is a check-type rule.
         self.assertEqual(MatchResult.ONGOING, session.state.result)
 
-        session._resolve_check_timing()
+        session._resolve_resolution_point()
 
         expected = (
             MatchResult.P2_WIN
@@ -51,7 +51,7 @@ class DefeatTests(unittest.TestCase):
         self.assertEqual(expected, session.state.result)
 
     def test_one_card_refresh_loses_at_next_check_timing(self):
-        """Deck 1 / Waiting 0 -> last card to Waiting -> Refresh -> lose at next check timing."""
+        """Deck 1 / Waiting 0 -> Refresh -> lose at next resolution point."""
         session = opened()
         player_id = session.state.current_player
         player = session.state.players[player_id]
@@ -65,7 +65,6 @@ class DefeatTests(unittest.TestCase):
         self.assertEqual(1, len(player.deck))
         self.assertEqual(0, len(player.waiting_room))
 
-        # Effect moves the final Deck card to Waiting Room.
         session._move_card(
             player_id,
             Zone.DECK,
@@ -79,20 +78,18 @@ class DefeatTests(unittest.TestCase):
         # Refresh is interrupt-type and resolves first.
         session._resolve_interrupt_rules(player_id)
 
-        # The only Waiting Room card was shuffled into Deck and then moved
-        # to Clock as the Refresh Point.
+        # The only recycled card became the Refresh Point.
         self.assertEqual(0, len(player.deck))
         self.assertEqual(0, len(player.waiting_room))
 
-        # Defeat is check-type, so Refresh itself must NOT immediately end
-        # the game.
+        # Defeat is resolution-type, so Refresh itself must not end the game.
         self.assertEqual(
             MatchResult.ONGOING,
             session.state.result,
         )
 
-        # At the next check timing, Deck and Waiting Room are both empty.
-        session._resolve_check_timing()
+        # At the next resolution point the defeat condition is processed.
+        session._resolve_resolution_point()
 
         expected = (
             MatchResult.P2_WIN
@@ -106,7 +103,7 @@ class DefeatTests(unittest.TestCase):
         )
 
     def test_two_card_refresh_does_not_lose_at_next_check_timing(self):
-        """Deck 1 / Waiting 1 -> last card to Waiting -> Refresh -> still has Deck card."""
+        """Deck 1 / Waiting 1 -> Refresh -> one Deck card remains -> no defeat."""
         session = opened()
         player_id = session.state.current_player
         player = session.state.players[player_id]
@@ -131,7 +128,7 @@ class DefeatTests(unittest.TestCase):
         self.assertEqual(1, len(player.deck))
         self.assertEqual(1, len(player.waiting_room))
 
-        # Effect moves the final Deck card to Waiting Room.
+        # Final Deck card enters Waiting Room.
         session._move_card(
             player_id,
             Zone.DECK,
@@ -142,11 +139,9 @@ class DefeatTests(unittest.TestCase):
         self.assertEqual(0, len(player.deck))
         self.assertEqual(2, len(player.waiting_room))
 
-        # Interrupt-type Refresh resolves.
         session._resolve_interrupt_rules(player_id)
 
-        # Two cards were shuffled into Deck; one became the Refresh Point,
-        # so one card must remain in Deck.
+        # Two cards were recycled; one became the Refresh Point.
         self.assertEqual(1, len(player.deck))
         self.assertEqual(0, len(player.waiting_room))
 
@@ -155,8 +150,7 @@ class DefeatTests(unittest.TestCase):
             session.state.result,
         )
 
-        # Reaching check timing must still not cause defeat.
-        session._resolve_check_timing()
+        session._resolve_resolution_point()
 
         self.assertEqual(
             MatchResult.ONGOING,
@@ -193,7 +187,7 @@ class DefeatTests(unittest.TestCase):
                 reason="test_setup",
             )
 
-        session._resolve_check_timing()
+        session._resolve_resolution_point()
 
         self.assertEqual(MatchResult.P2_WIN, session.state.result)
 
@@ -211,7 +205,7 @@ class DefeatTests(unittest.TestCase):
                     reason="test_setup",
                 )
 
-        session._resolve_check_timing()
+        session._resolve_resolution_point()
 
         self.assertEqual(MatchResult.BOTH_LOSE, session.state.result)
         event = session.events[-1]
@@ -241,7 +235,7 @@ class DefeatTests(unittest.TestCase):
 
         self.assertEqual([], player.waiting_room)
 
-        session._resolve_check_timing(
+        session._resolve_resolution_point(
             stage_player_ids=(player_id,),
         )
 
@@ -263,7 +257,7 @@ class DefeatTests(unittest.TestCase):
                 reason="test_setup",
             )
 
-        session._resolve_check_timing()
+        session._resolve_resolution_point()
         before = deepcopy(session.__dict__)
 
         with self.assertRaises(ValueError):

@@ -452,12 +452,11 @@ class Session:
         })
         return result
 
-    def _resolve_check_timing(self, *, stage_player_ids=()):
-        """Resolve the currently implemented check-type rules.
+    def _resolve_check_rules(self, *, stage_player_ids=()):
+        """Resolve check-type rules for one resolution point.
 
-        Conditions are snapshotted before any check-type rule mutates state.
-        This matters because check-type rules at the same timing are considered
-        simultaneous by the game rules.
+        All currently implemented check-rule conditions are snapshotted before
+        any check-rule mutation occurs. This preserves same-timing semantics.
 
         Implemented check rules:
         - Deck and Waiting Room both empty -> defeat
@@ -465,8 +464,6 @@ class Session:
         """
         defeated_players = self._defeated_players_at_check_timing()
 
-        # Stage overlap remains a check-type rule. Resolve its mutations only
-        # after the defeat-condition snapshot has been taken.
         for player_id in stage_player_ids:
             player = self.state.players[player_id]
             resolve_stage_overlaps(
@@ -484,6 +481,48 @@ class Session:
             )
 
         return self._apply_defeat_result(defeated_players)
+
+    def _resolve_resolution_point(
+        self,
+        context=None,
+        *,
+        stage_player_ids=(),
+        timing_events=(),
+    ):
+        """Unified entry for one resolution point.
+
+        Order:
+        1. Snapshot and resolve check-type rules.
+        2. Append action-specific events belonging to this same timing.
+        3. Collect triggers from all events created since the context began.
+        4. Resolve pending effects.
+
+        Damage and future effects should enter check-type processing through
+        this method rather than calling individual check rules directly.
+        """
+        if context is None:
+            turn_player = self.state.current_player or self.state.first_player
+            context = ResolutionContext(
+                turn_player=turn_player,
+                non_turn_player=other(turn_player),
+                event_cursor=len(self.events),
+            )
+
+        result = self._resolve_check_rules(
+            stage_player_ids=stage_player_ids,
+        )
+
+        for event in timing_events:
+            self.events.append(event)
+
+        # Once the match ends, no triggered effect needs to continue resolving.
+        if result != MatchResult.ONGOING:
+            return context
+
+        new_events = context.capture_new_events(self.events)
+        collect_triggers(new_events, context)
+        resolve_pending_effects(context)
+        return context
 
     def dispatch(self, action: MulliganAction | AdvancePhaseAction | ClockAction | PlayCardAction):
         if self.state.result != MatchResult.ONGOING:
@@ -585,25 +624,17 @@ class Session:
             reason="play",
         )
 
-        # Check timing: snapshot and resolve all check-type rules together.
-        # Defeat is snapshotted before Stage overlap can change Waiting Room.
-        self._resolve_check_timing(
-            stage_player_ids=(action.player_id,),
-        )
-
         # "Played" belongs to the same timing as entry / overlap consequences.
         event = {"kind": "card_played", "player": action.player_id,
                  "card_id": card.instance_id, "slot": action.target_slot}
-        self.events.append(event)
 
-        # Collect only events created in this timing. Trigger collection is a
-        # placeholder today; later it will populate both players' pending pools.
-        new_events = context.capture_new_events(self.events)
-        collect_triggers(new_events, context)
-
-        # Turn-player effects must be exhausted before non-turn-player effects.
-        # Currently both pools are empty, so this is a no-op.
-        resolve_pending_effects(context)
+        # One unified resolution point:
+        # check-type rules -> timing event -> trigger collection -> pending effects.
+        self._resolve_resolution_point(
+            context,
+            stage_player_ids=(action.player_id,),
+            timing_events=(event,),
+        )
 
         self.actions.append(action)
         self.hashes.append(state_hash(state))
