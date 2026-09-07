@@ -22,6 +22,11 @@ class MulliganAction:
 class AdvancePhaseAction:
     player_id: str
 
+@dataclass(frozen=True)
+class ClockOptions:
+    player_id: str
+    selectable_card_ids: tuple[str, ...]
+    can_skip: bool = True
 
 @dataclass(frozen=True)
 class ClockAction:

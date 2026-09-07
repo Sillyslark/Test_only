@@ -4,7 +4,14 @@ import hashlib
 import json
 import random
 from pathlib import Path
-from actions import MulliganOptions, MulliganAction, AdvancePhaseAction, ClockAction, PlayCardAction
+from actions import (
+    MulliganOptions,
+    ClockOptions,
+    MulliganAction,
+    AdvancePhaseAction,
+    ClockAction,
+    PlayCardAction,
+)
 from phases import PHASES
 from cards import Card, ClimaxDefinition
 from deck_loader import build_deck, resolve_deck_path, DEFAULT_TEST_DECK
@@ -156,10 +163,32 @@ class Session:
 
         if (
             self.state.current_player == player_id
-            and self.state.phase == "stand"
+            and self.state.phase in ("stand", "draw")
         ):
             return (
                 AdvancePhaseAction(player_id),
+            )
+
+        if (
+            self.state.current_player == player_id
+            and self.state.phase == "clock"
+        ):
+            if self.state.clock_used:
+                return (
+                    AdvancePhaseAction(player_id),
+                )
+
+            hand = self.state.players[player_id].hand
+
+            return (
+                ClockOptions(
+                    player_id=player_id,
+                    selectable_card_ids=tuple(
+                        card.instance_id
+                        for card in hand
+                    ),
+                    can_skip=True,
+                ),
             )
 
         return ()
@@ -904,19 +933,7 @@ class Session:
             self._resolve_stand_phase()
 
         elif phase == "draw":
-            # Draw 暂时仍沿用当前行为。
-            # 之后做 test_turn_draw_phase.py 时再正式整理。
-            card = self._draw_one(
-                self.state.current_player,
-                reason="draw",
-            )
-
-            self.events.append({
-                "kind": "card_drawn",
-                "player": self.state.current_player,
-                "card_id": card.instance_id,
-                "turn": self.state.turn_number,
-            })
+            self._resolve_draw_phase()
 
         self.events.append({
             "kind": "phase_processed",
@@ -931,6 +948,23 @@ class Session:
         #
         # 目前尚未实现角色朝向，所以先保留空处理。
         return None
+
+    def _resolve_draw_phase(self):
+        player_id = self.state.current_player
+
+        card = self._draw_one(
+            player_id,
+            reason="draw",
+        )
+
+        self.events.append({
+            "kind": "card_drawn",
+            "player": player_id,
+            "card_id": card.instance_id,
+            "turn": self.state.turn_number,
+        })
+
+        return card
 
     def _open_action_window(self, phase):
         self.events.append({
@@ -981,7 +1015,44 @@ class Session:
             self.hashes.append(state_hash(state))
 
             return event
-        
+
+        if state.phase == "draw":
+            self._end_phase("draw")
+            self._enter_phase("clock")
+
+            event = {
+                "kind": "phase_changed",
+                "player": state.current_player,
+                "turn": state.turn_number,
+                "phase": "clock",
+            }
+
+            # 暂时保留，兼容现有 UI / Replay / 旧测试。
+            self.events.append(event)
+
+            self.actions.append(action)
+            self.hashes.append(state_hash(state))
+
+            return event
+
+        if state.phase == "clock":
+            self._end_phase("clock")
+            self._enter_phase("main")
+
+            event = {
+                "kind": "phase_changed",
+                "player": state.current_player,
+                "turn": state.turn_number,
+                "phase": "main",
+            }
+
+            self.events.append(event)
+
+            self.actions.append(action)
+            self.hashes.append(state_hash(state))
+
+            return event
+
         index = PHASES.index(state.phase)
         next_phase = PHASES[(index + 1) % len(PHASES)]
         player = state.players[state.current_player]

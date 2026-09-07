@@ -1,4 +1,12 @@
-﻿# WS 模拟器 · Pygame v15
+# WS 模拟器 · Pygame
+
+本项目正在开发一个 **Weiß Schwarz（WS）规则模拟器**。
+
+当前目标不是一次性实现全部卡牌效果，而是先建立稳定、可测试、可 Replay 的规则引擎基础，再逐步补全卡牌能力、各阶段操作和完整对局流程。
+
+---
+
+## 运行方式
 
 在 `New_version` 目录运行：
 
@@ -6,37 +14,433 @@
 python main.py
 ```
 
-依赖 Python 3.11、Pygame、Tkinter（仅用于 Replay 文件选择）。
+主要环境：
 
-若缺少 Pygame：
+- Python 3.11
+- Pygame
+- Tkinter（目前仅用于 Replay 文件选择）
+
+若缺少依赖：
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
+完整回归测试：
+
+```bash
+python -B -m unittest discover -s tests -v
+```
+
+开发时应优先运行当前功能对应的专项测试，再运行完整回归。
+
 ---
 
-## 项目目标
+# 当前开发状态
 
-本项目正在开发一个 WS（Weiß Schwarz）规则模拟器。
+当前已经建立的主要基础包括：
 
-当前开发重点是将：
-
-- 游戏状态
-- 区域移动
-- 回合流程
-- 规则处理
-- 中断结算
+- Card Definition / Card Instance 分离
+- Card JSON 加载
+- Deck JSON 加载与卡组选择
+- 卡组基础合法性验证
+- Seed / Shuffle
+- Mulligan
+- 回合与阶段生命周期基础
+- Stand Phase v1
+- Draw Phase
+- Clock Phase
+- Main Phase 基础出牌
+- Stage overlap
+- Zone movement
+- Resolution Zone（处理区）
+- Damage Resolution
+- Damage Cancel
+- Level Up
+- Deck Refresh
+- Refresh Point
+- Damage 中的特殊 Refresh / 败北边界
 - Replay
-- UI
+- 状态 Hash
+- Pygame UI
+- `legal_actions()` 基础体系
 
-相互分离，使规则层能够独立测试，并为后续卡牌能力、伤害、攻击等复杂结算提供统一基础。
+尚未完整实现的主要部分：
+
+- 角色 Stand / Rest / Reverse 朝向状态
+- 完整 AUTO / Trigger / Pending Effect 系统
+- Climax Phase 的实际使用规则
+- Attack Phase
+- Trigger Step
+- Counter
+- Stock 的完整规则
+- Memory 的完整规则
+- Climax 区完整规则
+- 非零费用支付
+- 完整胜负条件
+- 正式玩家 Choice UI
+- 完整卡牌能力系统
 
 ---
 
-## 界面与操作
+# 总体架构
 
-原始视觉稿 `ui/pygame/pygame_stage_grid_mock_v15.py` 保持原样，新适配器 `ui/pygame/app.py` 复用其中央几何布局。
+项目当前逐步采用：
+
+```text
+Card / Deck JSON
+        ↓
+cards.py / deck_loader.py
+        ↓
+Application
+        ↓
+Action / legal_actions
+        ↓
+Session / Engine
+        ↓
+Rule Resolution
+        ↓
+GameState
+        ↓
+Application Snapshot
+        ↓
+Pygame UI
+```
+
+核心原则：
+
+> Card 数据不属于 Engine。  
+> Deck 构筑不属于 Engine。  
+> UI 不直接修改比赛状态。  
+> 玩家行为通过 Action 进入 Engine。  
+> Engine 决定当前允许哪些操作。  
+> 规则处理与玩家 Action 分离。  
+> Replay 必须能够确定性重现比赛。
+
+---
+
+# 回合与阶段生命周期
+
+当前正在将各阶段逐步迁移到统一生命周期。
+
+基本模型为：
+
+```text
+Turn Start
+↓
+Phase Start
+↓
+处理阶段开始时点
+↓
+Phase Process
+↓
+执行该阶段本身的规则处理
+↓
+处理因此产生的规则 / 效果
+↓
+Player Action Window
+↓
+legal_actions()
+↓
+玩家 Action
+↓
+Phase End
+↓
+处理阶段结束时点
+↓
+Next Phase Start
+```
+
+当前已经实际接入的生命周期事件包括：
+
+```text
+turn_started
+phase_started
+phase_processed
+action_window_opened
+phase_ended
+```
+
+这些时点不仅用于当前流程，也为后续 AUTO 效果预留明确的触发位置。
+
+例如未来可以区分：
+
+```text
+“你的回合开始时……”
+“你的重置阶段开始时……”
+“你的抽卡阶段结束时……”
+```
+
+它们不应被视为同一个时点。
+
+## 玩家操作窗口
+
+普通阶段操作只应在 Engine 到达稳定的 Player Action Window 后开放。
+
+长期原则为：
+
+```text
+若存在尚未处理的强制规则 / AUTO
+→ 不开放普通阶段操作
+
+若存在需要玩家决定的效果
+→ legal_actions 只开放对应 Choice
+
+全部处理完成
+→ 打开普通 Player Action Window
+```
+
+当前 AUTO 系统尚未完整实现，但阶段生命周期已经为其预留结构。
+
+---
+
+# 当前阶段实现
+
+## Stand Phase / 重置阶段
+
+当前流程：
+
+```text
+Turn Start
+↓
+Stand Phase Start
+↓
+Stand Phase Process
+↓
+Player Action Window
+↓
+玩家选择“进入抽卡阶段”
+↓
+Stand Phase End
+↓
+Draw Phase Start
+```
+
+重置阶段本身未来应执行：
+
+```text
+当前玩家舞台上的横置角色
+↓
+变为竖置
+```
+
+但目前尚未建立完整的 Stand / Rest / Reverse 卡牌朝向状态，因此 `_resolve_stand_phase()` 当前保留为空实现。
+
+### Stand 的合法操作
+
+当前只有：
+
+```text
+AdvancePhaseAction
+→ 进入 Draw Phase
+```
+
+---
+
+## Draw Phase / 抽卡阶段
+
+当前流程：
+
+```text
+Draw Phase Start
+↓
+规则抽 1 张
+↓
+必要时处理中断规则
+↓
+Draw Phase Process 完成
+↓
+Player Action Window
+↓
+玩家选择“进入计时阶段”
+↓
+Draw Phase End
+↓
+Clock Phase Start
+```
+
+规则抽牌通过统一抽牌逻辑执行，因此如果抽牌过程中 Deck 为空，会正常接入 Refresh / Level Up 等中断处理。
+
+已经测试的重要边界包括：
+
+```text
+Deck = 0
+Waiting Room > 0
+↓
+先 Refresh
+↓
+再完成规则抽牌
+```
+
+以及：
+
+```text
+Clock = 6
+Deck = 1
+Waiting Room = 8
+↓
+抽最后 1 张
+↓
+Deck 为空
+↓
+Refresh
+↓
+Refresh Point → Clock
+↓
+Clock = 7
+↓
+Level Up
+↓
+完成后才进入 Draw Action Window
+```
+
+---
+
+## Clock Phase / 计时阶段
+
+计时阶段当前有两个规则选择：
+
+```text
+A. 跳过计时
+   → 进入主要阶段
+
+B. 选择当前玩家 1 张手牌
+   → 该牌进入 Clock 顶部
+   → 依次抽 2 张
+```
+
+第二种操作中的两次抽牌不是一个不可分割的批量动作。
+
+实际结构为：
+
+```text
+手牌 → Clock
+↓
+Interrupt Checkpoint
+↓
+抽第 1 张
+↓
+Interrupt Checkpoint
+↓
+抽第 2 张
+↓
+Interrupt Checkpoint
+```
+
+因此 Level Up / Refresh 可以在这些原子步骤之间正常介入。
+
+已经测试的复杂边界之一：
+
+```text
+初始：
+Clock = 6
+Deck = 1
+Waiting Room = 8
+Hand = 1
+
+执行 ClockAction
+↓
+Hand → Clock
+↓
+Clock = 7
+↓
+Level Up
+↓
+抽第 1 张（原 Deck 最后一张）
+↓
+Deck 为空
+↓
+Refresh
+↓
+Refresh Point → Clock
+↓
+抽第 2 张
+↓
+ClockAction 完成
+```
+
+### ClockOptions
+
+Clock Phase 使用 `ClockOptions` 描述当前玩家的操作空间：
+
+```text
+player_id
+selectable_card_ids
+can_skip
+```
+
+UI 因此能够知道：
+
+- 当前哪些手牌可以作为 Clock 的选择对象
+- 当前允许跳过 Clock
+- “Clock 并抽 2 张”属于当前阶段的操作，即使玩家尚未选牌
+
+---
+
+# legal_actions
+
+Engine 开始通过：
+
+```python
+session.legal_actions(player_id)
+```
+
+向 Application / UI 描述当前允许的玩家操作。
+
+当前已经使用的 Options 包括：
+
+```text
+MulliganOptions
+ClockOptions
+```
+
+以及具体 Action，例如：
+
+```text
+AdvancePhaseAction
+MulliganAction
+ClockAction
+PlayCardAction
+```
+
+## Options 与 Action
+
+两者职责不同。
+
+例如 Mulligan：
+
+```text
+MulliganOptions
+→ 告诉 UI：
+   哪些手牌可以选择
+   最少选择几张
+   最多选择几张
+
+MulliganAction
+→ 玩家完成选择后真正提交给 Engine
+```
+
+Clock 同理：
+
+```text
+ClockOptions
+→ 告诉 UI：
+   当前合法手牌集合
+   是否允许跳过
+
+ClockAction
+→ 玩家选定具体手牌后提交
+```
+
+这种结构避免 UI 自己重新实现规则判断。
+
+---
+
+# UI 与操作
+
+当前正式 UI 为 Pygame UI。
+
+旧 UI 已归档，不再作为当前规则开发的主要界面。
 
 P2 在上、P1 在下：
 
@@ -47,72 +451,86 @@ P1 前列
 P1 后列
 ```
 
-对应位置对齐。
+当前主要操作：
 
-沿用：
+- 输入 Seed 开局，或随机新局
+- Mulligan 中选择 0 至当前允许上限的手牌并确认
+- Stand 中进入 Draw
+- Draw 完成规则抽牌后进入 Clock
+- Clock 可跳过，或选择 1 张手牌置入 Clock 后抽 2 张
+- Main 中选择手牌和己方 Stage 位置进行出牌
+- 点击部分区域查看完整区域顺序
+- Replay 保存 / 载入
+- `Esc` 清除当前选择
 
-- 150 像素正方形网格
-- 15 像素间距
-- 107×150 纵向卡框
-- 整体随窗口缩放
-- 网格边缘不绘制
+## UI 操作显示原则
 
-最右列集中放置操作确认、种子输入、Replay、区域顺序和最近记录。左列保留空白。
+当前采用：
 
-当前基本操作：
+```text
+不属于当前阶段的操作
+→ 隐藏
 
-- 点击种子框，`Ctrl+A` 清空后输入整数，点击按种子开局；也可随机新局。
-- 中央手牌可选择，右侧确认换牌。先手、后手依次操作，允许选择 0 张。
-- 换牌结束进入先手第 1 回合。
-- 右侧按钮推进重置、抽卡、计时、主要、高潮、攻击、结束阶段。
-- 结束阶段完成后切换当前玩家。
-- 抽卡阶段从 Deck 顶部抽 1 张。
-- 计时阶段选择一张己方手牌执行 Clock：该牌进入 Clock 顶部，然后依次抽 2 张。每回合一次，也可跳过。
-- 主要阶段选择一张己方手牌，再选择己方 Stage 位置并确认出牌。
-- 对已占用 Stage 位置出牌时，旧卡会先通过规则处理进入 Waiting Room。
-- 点击部分区域可在右侧查看完整区域顺序。
-- 手牌单行最多显示 7 张，通过左右箭头浏览。
-- `Esc` 清除手牌及 Stage 目标选择。
-- Replay 保存和载入使用系统文件选择窗口。
+属于当前阶段，但尚缺少必要输入
+→ 可以显示为 disabled
+
+已经满足执行条件
+→ 正常可用
+```
+
+例如 Clock Phase 始终显示：
+
+```text
+[跳过计时 → 主要阶段]
+
+[将所选手牌置入计时区 → 抽 2 张]
+```
+
+未选择合法手牌时，第二个按钮为灰色不可用。
+
+选择一张合法手牌后，该按钮变为可用。
+
+这样玩家既能看到当前阶段有哪些规则选择，又不会提交非法 Action。
 
 ---
 
-# 数据结构
+# Card Definition 与 Card Instance
 
-## Card Definition 与 Card Instance
+卡牌的静态定义与比赛实例已经分离。
 
-卡牌的“定义”和一局比赛中的“实例”已经分离。
+## Card Definition
 
-### Card Definition
+描述一种实际卡牌的固定信息。
 
-描述某一种实际卡牌，例如：
+例如 Character 可以包含：
 
 ```text
-T-001
-测试
-黄色
-0级
-0费
-500力量
-1灵魂
+编号
+卡名
+种类
+颜色
+等级
+费用
+力量
+灵魂
+特征
+触发标记
 ```
 
-卡牌定义不再由 `CardDefinition` 的默认值隐式生成，而是从实际卡牌数据文件加载。
+Climax 与 Character 使用不同的数据结构，不为了兼容 Character 而人为添加角色专属字段。
 
-### Card Instance
+## Card Instance
 
-`Card` 表示比赛中实际存在的一张牌。
+`Card` 表示一局比赛中实际存在的一张牌。
 
 每个实例具有：
 
 - `instance_id`
 - `number`
 - `definition`
-- 当前朝向等实例状态
+- 未来的实例状态
 
-因此即使两张牌都是 T-001，它们仍然是两个不同的比赛实例。
-
-`instance_id` 与卡牌编号 `definition.code` 是不同概念。
+因此即使多张牌具有同一个 `definition.code`，它们仍然是不同的比赛实例。
 
 ---
 
@@ -120,64 +538,42 @@ T-001
 
 卡牌静态数据使用 JSON 保存。
 
-当前目录结构：
+当前测试卡已经包括 Character 与 Climax 类型，例如：
 
 ```text
 card/
 └─ TEST/
-   └─ T-001.json
+   ├─ T-001.json
+   └─ T-002.json
 ```
 
-当前测试角色：
+其中：
 
 ```text
-编号：T-001
-卡名：测试
-种类：character
-颜色：yellow
-等级：0
-费用：0
-力量：500
-灵魂：1
-特征：无
-触发标记：无
+T-001
+→ Character 测试卡
+
+T-002
+→ Climax 测试卡
 ```
 
-Python 规则代码负责读取 JSON，并生成相应的 `CardDefinition`。
-
-因此：
+Python 代码负责：
 
 ```text
-JSON
-负责卡牌静态数据
-
-Python
-负责数据加载、规则验证和游戏逻辑
+读取 JSON
+↓
+验证数据
+↓
+生成对应 CardDefinition
 ```
 
-卡牌定义不应重新硬编码到 Engine 中。
+卡牌定义不重新硬编码进 Engine。
 
 ---
 
 # 卡组数据
 
-卡组同样开始与 Engine 分离。
-
-当前目录结构：
-
-```text
-deck/
-└─ TEST/
-   └─ Test_All_T_001.json
-```
-
-当前测试卡组：
-
-```text
-Test_All_T_001
-
-T-001 × 50
-```
+Deck 数据同样与 Engine 分离。
 
 `deck_loader.py` 负责：
 
@@ -186,38 +582,31 @@ T-001 × 50
 ↓
 读取对应 Card JSON
 ↓
+验证 Deck
+↓
 生成 CardDefinition
 ↓
-生成比赛中的 Card instances
+生成 Card instances
 ↓
 交给 Engine
 ```
 
-Engine 不负责决定某副卡组包含哪些卡。
+当前已经建立纯 T-001 卡组以及包含 T-001 / T-002 的测试卡组，用于验证 Character / Climax 混合加载和后续伤害测试。
 
-也就是说，Engine 只负责：
-
-```text
-加载指定 Deck
-↓
-生成比赛实例
-↓
-洗牌
-↓
-开始比赛
-```
-
-而不是：
+当前已经实现的基础 Deck 合法性包括：
 
 ```text
-Engine 内部硬编码 50 张 T-001
+Deck 总数必须 = 50
+Climax 数量不得超过 8
 ```
+
+Engine 不负责决定一副 Deck 应包含哪些卡。
 
 ---
 
 # Zone 与区域顺序
 
-当前主要区域统一使用 `Zone` 表示，包括：
+主要区域统一通过 `Zone` 表示，包括：
 
 - Deck
 - Hand
@@ -228,8 +617,17 @@ Engine 内部硬编码 50 张 T-001
 - Stock
 - Memory
 - Climax
+- Resolution Zone
 
 Stage 使用独立槽位结构。
+
+## Resolution Zone / 处理区
+
+Damage Resolution 已使用独立处理区。
+
+处理区中的卡牌在伤害结算完成前不直接进入 Clock 或 Waiting Room。
+
+这对于 Damage Cancel、Refresh 和特殊败北边界非常重要。
 
 ## Top / Bottom 统一约定
 
@@ -240,28 +638,9 @@ index 0 = Top
 最后一个元素 = Bottom
 ```
 
-这个约定适用于所有有顺序的区域。
+这个约定适用于所有具有顺序意义的区域。
 
-例如：
-
-```python
-zone[0]
-```
-
-始终表示该区域顶部。
-
-UI 可以根据实际视觉需求反向显示，但：
-
-> **UI 的显示方向不得改变规则层和存储层的 Top / Bottom 定义。**
-
-例如 Hand 可以在 UI 中显示为：
-
-```text
-最早获得 → 最晚获得
-左                右
-```
-
-即使 UI 进行了反向排列，底层数据顺序仍遵守统一的 Top-first 规则。
+UI 可以为了视觉需求反向显示，但不能改变规则层的 Top / Bottom 定义。
 
 ---
 
@@ -289,7 +668,7 @@ _move_card()
 
 ## 多张牌移动
 
-原则上，多张牌的区域移动拆成：
+多张移动原则上拆为：
 
 ```text
 移动第 1 张
@@ -298,33 +677,31 @@ _move_card()
 ...
 ```
 
-而不是直接对区域 list 进行批量修改。
+这样可以：
 
-这样可以保证：
+- 为每张牌产生明确事件
+- 在规定的 Checkpoint 处理中断规则
+- 让未来能力系统监听移动
+- 保持 Replay 的确定性
 
-- 每张牌移动都有明确事件
-- 中断规则可以在规定的检查点介入
-- 后续能力系统可以监听移动时点
-- Replay 更容易保持确定性
+但：
 
-但“逐张移动”不等于“每移动一张都一定立即处理中断”。
+> 逐张移动不等于每移动一张都必须立即进行 Rule Check。
 
-是否产生 Rule Checkpoint 由上层规则决定。
+Checkpoint 由执行该动作的规则决定。
 
 ---
 
-# Resolution
+# Resolution 与规则处理
 
-规则处理目前区分：
+当前规则处理区分：
 
 ```text
-中断型规则处理
-Resolution Point / 结算型规则处理
+Interrupt / 中断型规则
+Resolution Point / 结算型规则
 ```
 
-## Resolution Point
-
-Stage overlap 已接入 Resolution Point 模型。
+Stage overlap 已接入 Resolution Point。
 
 例如：
 
@@ -346,29 +723,27 @@ Resolution Point
 原动作继续
 ```
 
-Trigger / Ability 系统目前只有基础结构和占位接口，完整卡牌能力尚未实现。
+Trigger / Ability 当前仍主要是基础结构和占位接口。
 
 ---
 
-# 中断型规则
+# Interrupt / 中断型规则
 
 中断规则会暂停当前动作。
 
-当前已经实现：
+当前主要包括：
 
 ```text
 Level Up
 Refresh
 ```
 
-中断规则统一通过中断检查循环处理。
-
 基本结构：
 
 ```text
 到达 Interrupt Checkpoint
 ↓
-收集当前所有成立的中断规则
+重新扫描当前成立的中断规则
 ↓
 没有
     → 返回原动作
@@ -376,21 +751,25 @@ Refresh
 只有一个
     → 自动处理
 
-多个同优先级规则
+多个同优先级
     → 玩家选择
 ↓
-处理一个中断规则
+处理其中一个
 ↓
-重新扫描当前游戏状态
+重新扫描当前状态
 ↓
-直到没有需要处理的中断规则
+直到没有中断规则
 ↓
 恢复原动作
 ```
 
-不能在第一次检查时缓存所有规则然后依次执行。
+不能在第一次检查时缓存所有中断规则再依次执行。
 
-因为处理一个规则可能改变其他规则是否仍然成立，也可能产生新的中断规则。
+因为一个中断规则的处理可能：
+
+- 使另一个规则不再成立
+- 使新的规则成立
+- 改变后续处理顺序
 
 ---
 
@@ -404,41 +783,38 @@ Clock >= 7
 
 时触发 Level Up。
 
-候选牌固定为：
+候选范围为：
 
 ```text
 Clock Bottom 起的 7 张
 ```
 
-玩家从这 7 张中选择 1 张进入 Level。
+玩家从中选择 1 张进入 Level，其余 6 张进入 Waiting Room。
 
-其余 6 张进入 Waiting Room。
+测试环境当前使用确定性默认选择，但 Engine 已为未来玩家 Choice 留出接口。
 
-测试环境中当前默认选择：
-
-```text
-从 Bottom 起第 1 张
-```
-
-但 Engine 已保留玩家选择接口。
-
-如果 Level Up 完成后：
+如果 Level Up 后：
 
 ```text
 Clock >= 7
 ```
 
-仍然成立，则重新触发 Level Up。
-
-因此 Clock 中存在 14 张及以上卡牌时可以连续升级。
+仍成立，则重新进行中断规则检查，因此可以连续升级。
 
 ---
 
 # Deck Refresh
 
-当 Deck 为空且 Waiting Room 中存在卡牌时触发 Refresh。
+当：
 
-流程：
+```text
+Deck 为空
+Waiting Room 中存在卡牌
+```
+
+时触发 Refresh。
+
+通常流程：
 
 ```text
 Deck 为空
@@ -446,7 +822,6 @@ Deck 为空
 中断当前流程
 ↓
 Waiting Room → Deck
-逐张移动
 ↓
 Shuffle
 ↓
@@ -456,96 +831,159 @@ Deck Top → Clock
 重新进行中断规则检查
 ```
 
-刷新使用比赛自身的 RNG 时间线。
-
-洗牌前恢复当前 `rng_state`，洗牌完成后保存新的 `rng_state`，保证 Replay 可以确定性重现。
+Refresh 使用比赛自身 RNG 时间线，保证 Replay 可以确定性重现洗牌结果。
 
 ---
 
-# 同时发生的中断规则
+# 同时成立的中断规则
 
-Level Up 与 Refresh 当前属于同一优先级。
+Level Up 与 Refresh 可能同时成立。
 
 例如：
 
 ```text
-Deck = 1
-Clock = 6
+Deck = 0
+Clock >= 7
 Waiting Room > 0
 ```
 
-执行：
+Engine 不应简单把所有成立规则缓存后固定执行。
 
-```text
-Deck Top → Clock
-```
+每处理一个中断规则后，都必须重新扫描当前状态。
 
-后：
-
-```text
-Deck = 0
-Clock = 7
-```
-
-此时同时成立：
-
-```text
-Level Up
-Refresh
-```
-
-不能由 Engine 写死处理顺序。
-
-Engine 会调用中断规则选择接口，由玩家决定先处理哪一个。
-
-测试环境默认：
-
-```text
-Refresh first
-```
-
-但测试也已经确认：
-
-```text
-Level Up first
-```
-
-同样能够正确执行。
-
-每处理完一个中断规则后必须重新扫描当前状态。
+当前测试已经覆盖不同处理顺序及其重新扫描行为。
 
 ---
 
-# 原子步骤与 Interrupt Checkpoint
+# Damage Resolution
 
-连续动作应拆成明确的原子步骤。
+Damage 已经建立独立的 Resolution Zone 流程。
 
-例如 Clock 阶段的“抽 2”：
+基本模型：
 
 ```text
-抽第 1 张
+受到 N 点伤害
 ↓
-Interrupt Checkpoint
+Deck Top 逐张 → Resolution Zone
 ↓
-若需要：
+每张牌移动后处理必要的中断规则
+↓
+检查是否出现 Climax
+```
+
+如果没有 Climax：
+
+```text
+Damage Hit
+↓
+Resolution Zone 中的牌
+按原顺序进入 Clock
+```
+
+如果出现 Climax：
+
+```text
+Damage Cancel
+↓
+完成当前伤害取消处理
+↓
+Resolution Zone → Waiting Room
+```
+
+## Resolution Zone 顺序
+
+处理区本身具有顺序。
+
+例如处理区从 Bottom → Top 为：
+
+```text
+1 2 3
+```
+
+原 Clock 为：
+
+```text
+4 5 6
+```
+
+Damage Hit 后应保持原伤害牌顺序，形成：
+
+```text
+4 5 6 1 2 3
+```
+
+而不是把处理区牌逆序加入 Clock。
+
+---
+
+# Damage 中的 Refresh
+
+Damage 过程中 Deck 可能耗尽。
+
+例如：
+
+```text
+Deck：
+2 张非 Climax
+
+Waiting Room：
+8 张
+
+Damage：
+3
+```
+
+流程为：
+
+```text
+第 1 张 → Resolution
+第 2 张 → Resolution
+↓
+Deck 为空
+↓
 Refresh
-Level Up
-其他中断规则
 ↓
-全部处理中断
+Refresh Point → Clock
 ↓
-抽第 2 张
+继续原 Damage
+↓
+再取第 3 张 → Resolution
+↓
+继续 Damage Cancel / Hit 判定
 ```
 
-因此：
+也就是说：
+
+> Refresh 会中断 Damage，但不会丢失尚未完成的 Damage 进度。
+
+---
+
+# Damage 中 Deck 与 Waiting Room 同时为空
+
+已经针对规则书 9.2.2.1 对应的特殊边界进行了实现和测试。
+
+核心区别在于：
 
 ```text
-draw 2
+Deck 为空
+Waiting Room 为空
 ```
 
-在实现上不是不可分割的批量操作。
+发生时：
 
-这也是后续 Damage、能力效果和其他多张牌移动的基础。
+- 是否正在进行 Damage Resolution
+- Resolution Zone 中是否存在 Climax
+
+这些条件会影响 Refresh 是否结束、Damage 是否继续以及是否立即败北。
+
+当前测试已经覆盖：
+
+- Damage 中无 Climax 时的特殊败北
+- Climax 已进入 Resolution Zone 时先完成取消
+- Damage 结束后再次遇到无法 Refresh 时的败北
+- 特殊败北后不再继续产生后续 Damage / Refresh / Level Up 状态修改
+- 特殊败北时 Resolution Zone 保留状态
+- Replay / state hash 对 Resolution Zone 的一致性
 
 ---
 
@@ -568,77 +1006,133 @@ Replay 记录：
 Level Up
 Refresh
 Stage overlap
+Damage 内部处理
 ```
 
 不会伪装成玩家 Action 写入 Action Log。
 
-它们由原始 Action 重新执行时确定性产生。
+它们应由原始 Action 重新执行时确定性产生。
 
-Refresh 已进行专门 Replay 测试：
+Replay 已覆盖：
 
 ```text
-触发 Refresh
-↓
-保存 Replay
-↓
-重新执行 Replay
-↓
-Deck 顺序一致
-rng_state 一致
-Events 一致
-GameState 一致
+规则处理
+随机 Refresh
+Resolution Zone
+状态 Hash
+Replay 后继续游戏
 ```
 
-并且恢复后的比赛继续执行多个 Action，原局与 Replay 局仍保持一致。
+等一致性问题。
 
-因此 Refresh 使用的随机过程属于比赛确定性状态的一部分。
+`resolution_zone` 已纳入当前状态，并为旧 Replay / hash 版本保留兼容处理。
 
 ---
 
-# 当前测试重点
+# 测试体系
 
-当前自动测试已经覆盖：
+测试统一放在：
+
+```text
+tests/
+```
+
+规则测试不应依赖已经归档的旧 UI。
+
+当前测试重点包括：
 
 - 开局
-- Seed 与 Shuffle
+- Seed / Shuffle
 - Mulligan
-- 回合推进
-- Draw
-- Clock
+- Deck Loader
+- Deck Choice
+- Card Definition
+- Turn
+- Stand Phase
+- Draw Phase
+- Clock Phase
 - Play
 - Stage overlap
 - Zone movement
 - Card conservation
 - Move atomicity
+- Damage
+- Damage Cancel
+- Resolution Zone
 - Level Up
 - 连续 Level Up
 - Refresh
 - Refresh Point
-- Level Up + Refresh 同时成立
-- 中断规则选择
-- 中断重新扫描
-- 非法中断选择原子性
-- 中断边界
+- Level Up + Refresh
+- Interrupt 选择与重新扫描
 - Replay
-- Refresh Replay
-- Replay 后继续执行的确定性
 - Application boundary
 
-开发过程中修改规则层后应优先运行相关测试，再运行：
+## 阶段专项测试原则
 
-```bash
-python -B -m unittest discover -v
+阶段逐步使用独立专项测试。
+
+例如：
+
+```text
+test_turn_stand_phase.py
+
+Turn Start
+↓
+Stand Start
+↓
+Stand Process
+↓
+Stand Action Window
+↓
+Stand End
+↓
+Draw Start
 ```
 
-进行完整回归。
+测试到下一阶段的 **Start 边界** 即停止，不测试下一阶段内部规则。
+
+同理：
+
+```text
+test_turn_draw_phase.py
+
+Draw Start
+↓
+规则抽牌
+↓
+Draw Action Window
+↓
+Draw End
+↓
+Clock Start
+```
+
+以及：
+
+```text
+test_turn_clock_phase.py
+
+Clock Start
+↓
+Clock Action Window
+↓
+Skip / ClockAction
+↓
+Clock End
+↓
+Main Start
+```
+
+这种划分避免一个测试文件同时承担多个阶段的规则责任。
 
 ---
 
 # UI 与规则层边界
 
-UI 只持有独立快照。
+UI 持有 Application 提供的独立快照。
 
-所有比赛操作仍应通过：
+所有比赛操作仍通过：
 
 ```text
 Application
@@ -650,7 +1144,7 @@ Session / Engine
 
 完成。
 
-UI 不应直接修改：
+UI 不直接修改：
 
 - Deck
 - Hand
@@ -661,142 +1155,87 @@ UI 不应直接修改：
 - Stock
 - Memory
 - Climax
+- Resolution Zone
 
-等规则状态。
+当前正在进一步将 UI 的按钮显示和可选对象迁移到 `legal_actions()`。
 
-当前玩家选择接口，例如：
-
-```text
-Level Up 选牌
-多个中断规则选择
-```
-
-在测试环境中使用确定性默认选择。
-
-未来接入正式 UI 后，应逐步发展为：
+未来玩家 Choice 预计采用：
 
 ```text
 Engine 请求 Choice
 ↓
-进入 Waiting for Choice 状态
+Waiting for Choice
 ↓
-UI 展示选择
+legal_actions / choice options
+↓
+UI 展示
 ↓
 玩家提交 Choice
 ↓
 Engine 恢复 Resolution
 ```
 
-而不是让规则层直接依赖 Pygame 弹窗。
+而不是让 Engine 直接依赖 Pygame 弹窗。
 
 ---
 
-# 尚未完成
+# 下一步方向
 
-目前尚未完整实现：
+当前 Stand → Draw → Clock 已经开始使用统一阶段生命周期和合法操作体系。
 
-- 卡牌能力系统
-- Trigger / Pending Effect 的完整结算
-- 攻击流程
-- Trigger Step
-- Counter
-- Damage Resolution
-- Damage Cancel
-- Climax 卡完整规则
-- Stock 规则
-- Memory 规则
-- Climax 区规则
-- 非零费用支付
-- Level 4 / 败北处理
-- 胜负判定
-- 正式玩家选择 UI
+接下来可以继续沿两个方向推进：
 
----
+## 阶段与 Action 系统
 
-# 下一步计划
-
-## Climax 卡
-
-计划增加：
+继续整理：
 
 ```text
-card/TEST/T-002.json
+Main Phase
+Climax Phase
+Attack Phase
+End Phase
 ```
 
-定义：
+使各阶段逐步统一为：
 
 ```text
-编号：T-002
-卡名：测试CX
-种类：climax
-颜色：yellow
-触发标记：无
+Phase Start
+→ Phase Process
+→ Action Window
+→ legal_actions
+→ Phase End
 ```
 
-Climax 卡与 Character 卡具有不同的数据结构。
+## AUTO / Trigger 系统
 
-高潮卡本身只需要：
+在阶段生命周期稳定后，将已有 Trigger / Pending Effect 基础结构逐步扩展为真正的能力结算系统。
 
-- 卡名
-- 卡牌编号
-- 颜色
-- 触发标记
-
-不应为了兼容 Character 而人为添加：
+需要支持：
 
 ```text
-level
-cost
-power
-soul
-traits
+回合开始时
+阶段开始时
+阶段处理中
+阶段结束时
+卡牌移动时
+伤害取消时
+伤害命中时
 ```
 
-等角色专属属性。
-
-## 测试卡组
-
-随后建立新的测试 Deck：
+等触发时点，并区分：
 
 ```text
-T-001 × 42
-T-002 × 8
+强制执行
+玩家选择是否执行
+玩家选择对象
+多个效果的处理顺序
 ```
-
-并开始实现 Deck 合法性验证。
-
-当前已经确定的第一批合法性规则：
-
-```text
-Deck 总数必须 = 50
-Climax 数量不得超过 8
-```
-
-暂不擅自加入尚未确定的其他构筑限制。
-
-## Damage Resolution
-
-完成 Climax 类型后开始实现 Damage。
-
-Damage 将用于进一步验证：
-
-```text
-逐张移动
-Interrupt Checkpoint
-Refresh
-Level Up
-Climax / Damage Cancel
-Resolution
-Replay
-```
-
-之间的组合行为。
 
 ---
 
 # 项目目录原则
 
-当前逐步采用：
+主要结构：
 
 ```text
 card/
@@ -805,8 +1244,11 @@ card/
 deck/
     卡组定义
 
+tests/
+    自动测试
+
 cards.py
-    Python 卡牌数据结构与 Card JSON 加载
+    卡牌数据结构与 Card JSON 加载
 
 deck_loader.py
     Deck JSON 加载、验证和 Card instance 构建
@@ -815,7 +1257,7 @@ zones.py
     区域定义与区域访问
 
 engine.py
-    比赛状态与主要流程
+    GameState、Session 与主要流程
 
 rule_resolution.py
     规则处理
@@ -824,27 +1266,14 @@ resolution.py
     Resolution / Interrupt 等结算基础设施
 
 actions.py
-    玩家 Action
+    Options 与玩家 Action
 
 application.py
     应用层边界
 
 ui/
-    UI
+    当前 UI 与归档 UI
 ```
-
-核心原则：
-
-> Card 数据不属于 Engine。  
-> Deck 构筑不属于 Engine。  
-> UI 不直接修改比赛状态。  
-> 所有区域顺序在规则/存储层统一采用 Top-first。  
-> 多张移动原则上逐张执行。  
-> 中断规则在明确的 Interrupt Checkpoint 处理。  
-> 每处理一个中断规则后重新扫描游戏状态。  
-> Replay 必须能够确定性重现规则处理和随机过程。
-
----
 
 所有开发文件位于 `New_version`。
 

@@ -4,6 +4,7 @@ from . import pygame_stage_grid_mock_v15 as layout
 from application import Application
 from actions import (
     MulliganOptions,
+    ClockOptions,
     StartGameAction,
     MulliganAction,
     AdvancePhaseAction,
@@ -72,11 +73,21 @@ class PygameApp:
             None,
         )
 
+    def clock_options(self):
+        return next(
+            (
+                option
+                for option in self.view.legal_actions
+                if isinstance(option, ClockOptions)
+            ),
+            None,
+        )
+
     def select_card(self, pid, cid):
         s = self.view.state
         mulligan = self.mulligan_options()
+        clock = self.clock_options()
 
-        # Mulligan 的选择规则直接来自 Engine。
         if mulligan is not None:
             if (
                 pid != mulligan.player_id
@@ -92,16 +103,25 @@ class PygameApp:
             self.dirty = True
             return
 
-        # 其他阶段暂时沿用现有逻辑。
+        if clock is not None:
+            if (
+                pid != clock.player_id
+                or cid not in clock.selectable_card_ids
+            ):
+                return
+
+            if cid in self.selected:
+                self.selected.remove(cid)
+            else:
+                self.selected.clear()
+                self.selected.add(cid)
+
+            self.dirty = True
+            return
+
         actor = (
             s.current_player
-            if (
-                s.phase == 'main'
-                or (
-                    s.phase == 'clock'
-                    and not s.clock_used
-                )
-            )
+            if s.phase == "main"
             else None
         )
 
@@ -297,6 +317,8 @@ class PygameApp:
 
         mulligan = self.mulligan_options()
 
+        clock = self.clock_options()
+
         if mulligan is not None:
             # 换牌阶段只显示换牌确认。
             game_button(
@@ -313,6 +335,56 @@ class PygameApp:
                     )
                 ),
             )
+
+        elif clock is not None:
+            # 选项1始终可用。
+            game_button(
+                "跳过计时 → 主要阶段",
+                lambda: self.dispatch(
+                    AdvancePhaseAction(
+                        clock.player_id
+                    )
+                ),
+            )
+
+            selected_clock_card = None
+
+            if len(self.selected) == 1:
+                candidate = next(
+                    iter(self.selected)
+                )
+
+                if candidate in clock.selectable_card_ids:
+                    selected_clock_card = candidate
+
+            # 选项2始终显示。
+            # 没选合法手牌时保持灰色。
+            rect = pg.Rect(
+                x,
+                action_y,
+                width,
+                action_h,
+            )
+
+            self.button(
+                surface,
+                rect,
+                "将所选手牌置入计时区 → 抽 2 张",
+                (
+                    lambda cid=selected_clock_card:
+                    self.dispatch(
+                        ClockAction(
+                            clock.player_id,
+                            cid,
+                        )
+                    )
+                ),
+                enabled=(
+                    selected_clock_card is not None
+                ),
+            )
+
+            action_y += action_h + action_gap
 
         else:
             # 之后 Stand / Draw / Clock / Main
@@ -431,7 +503,7 @@ class PygameApp:
                 light,
                 self.panel_font,
             )
-            
+
         self.text(surface, '最近记录\n'+'\n'.join(self.event_text(e) for e in self.view.events[-4:]),
                   pg.Rect(x, self.size[1]-210, width, 200), light, self.panel_font)
 
