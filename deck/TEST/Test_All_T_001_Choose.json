@@ -1,0 +1,9 @@
+{
+  "name": "Test_All_T_001",
+  "cards": [
+    {
+      "card": "TEST/T-001.json",
+      "count": 50
+    }
+  ]
+}

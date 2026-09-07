@@ -2,12 +2,15 @@ from copy import deepcopy
 from dataclasses import replace
 import json
 import unittest
-from cards import T_001
+
 from actions import AdvancePhaseAction, PlayCardAction
-from cards import CardDefinition
+from cards import CardDefinition, load_card
 from engine import Session, Zone, other
 from rule_resolution import STAGE_SLOTS, resolve_stage_overlaps
 from test_turns import opened
+
+
+TEST_CARD = load_card("TEST/T-001.json")
 
 
 def at_main():
@@ -22,28 +25,59 @@ class PlayTests(unittest.TestCase):
         session = at_main()
         state = session.state
         player = state.players[state.current_player]
+
         self.assertEqual(
-            T_001,
-            player.hand[0].definition
+            TEST_CARD,
+            player.hand[0].definition,
         )
+
         for slot in STAGE_SLOTS:
             card = player.hand[0]
-            session.dispatch(PlayCardAction(state.current_player, card.instance_id, slot))
+            session.dispatch(
+                PlayCardAction(
+                    state.current_player,
+                    card.instance_id,
+                    slot,
+                )
+            )
             self.assertEqual([card], player.stage[slot])
             self.assertTrue(player.stage[slot][0].face_up)
+
         old = player.stage[STAGE_SLOTS[0]][0]
         new = player.hand[0]
         start = len(session.events)
-        session.dispatch(PlayCardAction(state.current_player, new.instance_id, STAGE_SLOTS[0]))
+
+        session.dispatch(
+            PlayCardAction(
+                state.current_player,
+                new.instance_id,
+                STAGE_SLOTS[0],
+            )
+        )
+
         self.assertEqual([new], player.stage[STAGE_SLOTS[0]])
         self.assertEqual(old, player.waiting_room[0])
+
         events = session.events[start:]
-        self.assertEqual(['card_moved', 'card_moved', 'card_played'], [e['kind'] for e in events])
-        self.assertEqual('stage_overlap', events[1]['reason'])
-        cards = player.deck + player.hand + player.clock + player.waiting_room + [c for zone in player.stage.values() for c in zone]
+        self.assertEqual(
+            ["card_moved", "card_moved", "card_played"],
+            [event["kind"] for event in events],
+        )
+        self.assertEqual("stage_overlap", events[1]["reason"])
+
+        cards = (
+            player.deck
+            + player.hand
+            + player.clock
+            + player.waiting_room
+            + [card for zone in player.stage.values() for card in zone]
+        )
         self.assertEqual(50, len(cards))
-        self.assertEqual(50, len({c.instance_id for c in cards}))
-        restored = Session.from_replay(json.loads(json.dumps(session.replay_data())))
+        self.assertEqual(50, len({card.instance_id for card in cards}))
+
+        restored = Session.from_replay(
+            json.loads(json.dumps(session.replay_data()))
+        )
         self.assertEqual(state, restored.state)
         self.assertEqual(session.events, restored.events)
 
@@ -52,9 +86,10 @@ class PlayTests(unittest.TestCase):
         player = session.state.players[session.state.current_player]
         cards = player.hand[:3]
         del player.hand[:3]
-        player.stage['back_left'] = list(cards)
+        player.stage["back_left"] = list(cards)
 
         start = len(session.events)
+
         resolve_stage_overlaps(
             player,
             session.state.current_player,
@@ -69,36 +104,67 @@ class PlayTests(unittest.TestCase):
             ),
         )
 
-        self.assertEqual(cards[:1], player.stage['back_left'])
+        self.assertEqual(cards[:1], player.stage["back_left"])
         self.assertEqual(cards[1:], player.waiting_room)
 
         events = session.events[start:]
         self.assertEqual(2, len(events))
-        self.assertTrue(all(event["kind"] == "card_moved" for event in events))
-        self.assertTrue(all(event["reason"] == "stage_overlap" for event in events))
+        self.assertTrue(
+            all(event["kind"] == "card_moved" for event in events)
+        )
+        self.assertTrue(
+            all(event["reason"] == "stage_overlap" for event in events)
+        )
 
     def test_invalid_play_is_atomic(self):
-        for case in ('phase', 'player', 'slot', 'card', 'kind', 'cost', 'level'):
+        for case in (
+            "phase",
+            "player",
+            "slot",
+            "card",
+            "kind",
+            "cost",
+            "level",
+        ):
             session = at_main()
             state = session.state
             player = state.players[state.current_player]
-            actor, slot, cid = state.current_player, STAGE_SLOTS[0], player.hand[0].instance_id
-            if case == 'phase':
-                state.phase = 'clock'
-            elif case == 'player':
+
+            actor = state.current_player
+            slot = STAGE_SLOTS[0]
+            cid = player.hand[0].instance_id
+
+            if case == "phase":
+                state.phase = "clock"
+            elif case == "player":
                 actor = other(actor)
-            elif case == 'slot':
-                slot = 'invalid'
-            elif case == 'card':
-                cid = 'invalid'
+            elif case == "slot":
+                slot = "invalid"
+            elif case == "card":
+                cid = "invalid"
             else:
-                definition = replace(player.hand[0].definition, **{case: 'event' if case == 'kind' else 1})
-                player.hand[0] = replace(player.hand[0], definition=definition)
+                definition = replace(
+                    player.hand[0].definition,
+                    **{case: "event" if case == "kind" else 1},
+                )
+                player.hand[0] = replace(
+                    player.hand[0],
+                    definition=definition,
+                )
+
             before = deepcopy(session.__dict__)
+
             with self.subTest(case=case), self.assertRaises(ValueError):
-                session.dispatch(PlayCardAction(actor, cid, slot))
+                session.dispatch(
+                    PlayCardAction(
+                        actor,
+                        cid,
+                        slot,
+                    )
+                )
+
             self.assertEqual(before, session.__dict__)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

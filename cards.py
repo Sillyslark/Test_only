@@ -1,4 +1,8 @@
-"""Serializable card definitions, separate from individual match instances."""
+"""Card data models and JSON loading helpers.
+
+Concrete cards live under card/**/*.json.  This module deliberately does not
+register or import any specific card such as T-001.
+"""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,8 +34,14 @@ class Card:
     face_up: bool = True
 
 
-def load_card_definition(path: Path) -> CardDefinition:
-    """Load one card definition from a JSON file."""
+def load_card_definition(path: Path | str) -> CardDefinition:
+    """Load one concrete card definition from a JSON file.
+
+    ``path`` may be a Path or string.  Relative paths are interpreted relative
+    to the caller's working directory; deck_loader normally supplies an
+    absolute path rooted at CARD_ROOT.
+    """
+    path = Path(path)
     data = json.loads(path.read_text(encoding="utf-8"))
 
     return CardDefinition(
@@ -48,6 +58,10 @@ def load_card_definition(path: Path) -> CardDefinition:
     )
 
 
-T_001 = load_card_definition(
-    CARD_ROOT / "TEST" / "T-001.json"
-)
+def load_card(relative_path: Path | str) -> CardDefinition:
+    """Load one card by a path relative to the project's ``card/`` directory.
+
+    Example:
+        load_card("TEST/T-001.json")
+    """
+    return load_card_definition(CARD_ROOT / relative_path)

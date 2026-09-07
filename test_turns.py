@@ -80,10 +80,15 @@ class TurnTests(unittest.TestCase):
             session.dispatch(MulliganAction(session.state.actor, ()))
             hashes.append(state_hash(session.state, legacy=True))
         data = session.replay_data()
-        data['version'] = 1
-        data['state_hashes'] = hashes
-        for action in data['actions']:
-            del action['kind']
+
+        # V1 predates selectable decks.
+        data["config"].pop("decks")
+
+        data["version"] = 1
+        data["state_hashes"] = hashes
+
+        for action in data["actions"]:
+            del action["kind"]
         restored = Session.from_replay(data)
         self.assertEqual(session.state, restored.state)
         self.assertEqual(

@@ -1,6 +1,8 @@
 """UI-independent game and application commands."""
 from dataclasses import dataclass
 
+from deck_loader import DEFAULT_TEST_DECK
+
 
 @dataclass(frozen=True)
 class MulliganAction:
@@ -29,6 +31,8 @@ class PlayCardAction:
 @dataclass(frozen=True)
 class StartGameAction:
     seed: int | None = None
+    p1_deck: str = DEFAULT_TEST_DECK
+    p2_deck: str = DEFAULT_TEST_DECK
 
 
 @dataclass(frozen=True)

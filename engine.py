@@ -3,10 +3,11 @@ from dataclasses import asdict, dataclass, field, replace
 import hashlib
 import json
 import random
+from pathlib import Path
 from actions import MulliganAction, AdvancePhaseAction, ClockAction, PlayCardAction
 from phases import PHASES
 from cards import Card
-from deck_loader import build_deck, TEST_ALL_T_001
+from deck_loader import build_deck, resolve_deck_path, DEFAULT_TEST_DECK
 from rule_resolution import (
     STAGE_SLOTS,
     resolve_stage_overlaps,
@@ -18,7 +19,7 @@ from zones import Zone
 from resolution import ResolutionContext, collect_triggers, resolve_pending_effects, InterruptRule
 from match_result import MatchResult
 
-VERSION = 5
+VERSION = 6
 CLOCK_CAPACITY = 50
 PLAYERS = ("P1", "P2")
 
@@ -82,19 +83,40 @@ def state_hash(state, legacy=False, version=VERSION):
 
 
 class Session:
-    def __init__(self, seed: int):
+    def __init__(
+        self,
+        seed: int,
+        *,
+        p1_deck: str = DEFAULT_TEST_DECK,
+        p2_deck: str = DEFAULT_TEST_DECK,
+    ):
         if type(seed) is not int:
             raise ValueError("种子必须是整数")
+
+        deck_sources = {
+            "P1": str(Path(p1_deck).as_posix()),
+            "P2": str(Path(p2_deck).as_posix()),
+        }
+
+        # Resolve and validate both deck paths before creating any match state.
+        deck_paths = {
+            player_id: resolve_deck_path(deck_sources[player_id])
+            for player_id in PLAYERS
+        }
+
         rng = random.Random(seed)
         first = rng.choice(PLAYERS)
         players = {}
+
         for player in PLAYERS:
             cards = build_deck(
-                TEST_ALL_T_001,
+                deck_paths[player],
                 player,
             )
             rng.shuffle(cards)
             players[player] = PlayerState(deck=cards[5:], hand=cards[:5])
+
+        self.deck_sources = dict(deck_sources)
         self.state = GameState(seed, first, players, rng.getstate())
         self.actions = []
         self.events = [{"kind": "game_started", "seed": seed, "first_player": first}]
@@ -709,33 +731,92 @@ class Session:
         return event
 
     def replay_data(self):
-        return {"version": VERSION, "seed": self.state.seed,
-                "config": {"players": 2, "cards_per_player": 50, "opening_hand": 5},
-                "actions": [{"kind": {MulliganAction: "mulligan", AdvancePhaseAction: "advance_phase", ClockAction: "clock", PlayCardAction: "play_card"}[type(a)],
-                             **asdict(a)} for a in self.actions], "state_hashes": list(self.hashes)}
+        return {
+            "version": VERSION,
+            "seed": self.state.seed,
+            "config": {
+                "players": 2,
+                "cards_per_player": 50,
+                "opening_hand": 5,
+                "decks": dict(self.deck_sources),
+            },
+            "actions": [
+                {
+                    "kind": {
+                        MulliganAction: "mulligan",
+                        AdvancePhaseAction: "advance_phase",
+                        ClockAction: "clock",
+                        PlayCardAction: "play_card",
+                    }[type(action)],
+                    **asdict(action),
+                }
+                for action in self.actions
+            ],
+            "state_hashes": list(self.hashes),
+        }
 
     @classmethod
     def from_replay(cls, data):
-        if data.get("version") not in (1, 2, 3, 4, VERSION):
+        version = data.get("version")
+        if version not in (1, 2, 3, 4, 5, VERSION):
             raise ValueError("不支持的 Replay 版本")
-        legacy = data["version"] == 1
-        session = cls(data["seed"])
-        hashes = [state_hash(session.state, legacy=legacy, version=data["version"])]
-        if data.get("config") != session.replay_data()["config"]:
-            raise ValueError("Replay 配置不匹配")
+
+        legacy = version == 1
+        config = data.get("config")
+
+        base_config = {
+            "players": 2,
+            "cards_per_player": 50,
+            "opening_hand": 5,
+        }
+
+        if version >= 6:
+            if not isinstance(config, dict):
+                raise ValueError("Replay 配置无效")
+
+            decks = config.get("decks")
+            if not isinstance(decks, dict) or set(decks) != set(PLAYERS):
+                raise ValueError("Replay 卡组配置无效")
+
+            if {
+                key: value
+                for key, value in config.items()
+                if key != "decks"
+            } != base_config:
+                raise ValueError("Replay 配置不匹配")
+
+            session = cls(
+                data["seed"],
+                p1_deck=decks["P1"],
+                p2_deck=decks["P2"],
+            )
+        else:
+            # V1-V5 predate selectable decks and always used the original
+            # default test deck.
+            if config != base_config:
+                raise ValueError("Replay 配置不匹配")
+            session = cls(data["seed"])
+
+        hashes = [
+            state_hash(
+                session.state,
+                legacy=legacy,
+                version=version,
+            )
+        ]
         for action in data["actions"]:
             if legacy or action["kind"] == "mulligan":
                 command = MulliganAction(action["player_id"], tuple(action["card_ids"]))
             elif action["kind"] == "advance_phase":
                 command = AdvancePhaseAction(action["player_id"])
-            elif action["kind"] == "clock" and data["version"] >= 3:
+            elif action["kind"] == "clock" and version >= 3:
                 command = ClockAction(action["player_id"], action["card_id"])
-            elif action["kind"] == "play_card" and data["version"] >= 4:
+            elif action["kind"] == "play_card" and version >= 4:
                 command = PlayCardAction(action["player_id"], action["card_id"], action["target_slot"])
             else:
                 raise ValueError("未知 Replay 动作")
             session.dispatch(command)
-            hashes.append(state_hash(session.state, legacy=legacy, version=data["version"]))
+            hashes.append(state_hash(session.state, legacy=legacy, version=version))
         if hashes != data.get("state_hashes"):
             raise ValueError("Replay 状态校验失败，文件或运行环境不兼容")
         return session
