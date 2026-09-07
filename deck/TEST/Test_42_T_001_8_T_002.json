@@ -1,0 +1,13 @@
+{
+  "name": "Test_42_T_001_8_T_002",
+  "cards": [
+    {
+      "card": "TEST/T-001.json",
+      "count": 42
+    },
+    {
+      "card": "TEST/T-002.json",
+      "count": 8
+    }
+  ]
+}

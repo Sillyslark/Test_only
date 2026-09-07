@@ -6,6 +6,8 @@ import unittest
 from cards import (
     CARD_ROOT,
     CardDefinition,
+    CharacterDefinition,
+    ClimaxDefinition,
     load_card,
     load_card_definition,
 )
@@ -16,6 +18,7 @@ class CardLoadingTests(unittest.TestCase):
         definition = load_card("TEST/T-001.json")
 
         self.assertIsInstance(definition, CardDefinition)
+        self.assertIsInstance(definition, CharacterDefinition)
         self.assertEqual("T-001", definition.code)
         self.assertEqual("测试", definition.name)
         self.assertEqual("character", definition.kind)
@@ -27,9 +30,39 @@ class CardLoadingTests(unittest.TestCase):
         self.assertEqual((), definition.traits)
         self.assertEqual((), definition.trigger_marks)
 
+    def test_t002_climax_loads_from_json(self):
+        definition = load_card("TEST/T-002.json")
+
+        self.assertIsInstance(definition, ClimaxDefinition)
+        self.assertEqual("T-002", definition.code)
+        self.assertEqual("测试CX", definition.name)
+        self.assertEqual("climax", definition.kind)
+        self.assertEqual("yellow", definition.color)
+        self.assertEqual((), definition.trigger_marks)
+
+    def test_t002_has_no_character_only_fields(self):
+        definition = load_card("TEST/T-002.json")
+
+        for field_name in (
+            "level",
+            "cost",
+            "power",
+            "soul",
+            "traits",
+        ):
+            with self.subTest(field=field_name):
+                self.assertFalse(hasattr(definition, field_name))
+
     def test_same_json_loads_to_equal_definition(self):
         a = load_card("TEST/T-001.json")
         b = load_card("TEST/T-001.json")
+
+        self.assertEqual(a, b)
+        self.assertIsNot(a, b)
+
+    def test_same_climax_json_loads_to_equal_definition(self):
+        a = load_card("TEST/T-002.json")
+        b = load_card("TEST/T-002.json")
 
         self.assertEqual(a, b)
         self.assertIsNot(a, b)
@@ -42,7 +75,7 @@ class CardLoadingTests(unittest.TestCase):
 
         self.assertEqual(direct, relative)
 
-    def test_missing_required_field_is_rejected(self):
+    def test_missing_required_character_field_is_rejected(self):
         data = {
             "code": "BROKEN",
             "name": "broken",
@@ -63,6 +96,43 @@ class CardLoadingTests(unittest.TestCase):
             )
 
             with self.assertRaises(KeyError):
+                load_card_definition(path)
+
+    def test_missing_required_climax_field_is_rejected(self):
+        data = {
+            "code": "BROKEN-CX",
+            "name": "broken cx",
+            "kind": "climax",
+            "trigger_marks": [],
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "broken-cx.json"
+            path.write_text(
+                json.dumps(data, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(KeyError):
+                load_card_definition(path)
+
+    def test_unknown_kind_is_rejected(self):
+        data = {
+            "code": "UNKNOWN",
+            "name": "unknown",
+            "kind": "event",
+            "color": "yellow",
+            "trigger_marks": [],
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "unknown.json"
+            path.write_text(
+                json.dumps(data, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ValueError):
                 load_card_definition(path)
 
 

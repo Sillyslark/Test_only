@@ -3,9 +3,16 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from cards import CardDefinition
+from cards import (
+    CardDefinition,
+    CharacterDefinition,
+    ClimaxDefinition,
+    load_card,
+)
+
 from deck_loader import (
     TEST_ALL_T_001,
+    TEST_42_T_001_8_T_002,
     build_deck,
     load_deck,
     load_deck_definitions,
@@ -185,6 +192,94 @@ class DeckLoaderTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     load_deck_definitions(path)
 
+class MixedDeckLoaderTests(unittest.TestCase):
+    def test_42_character_8_climax_deck_is_legal(self):
+        recipe, definitions = load_deck_definitions(
+            TEST_42_T_001_8_T_002
+        )
 
+        validate_deck(definitions)
+
+        self.assertEqual(
+            "Test_42_T_001_8_T_002",
+            recipe["name"],
+        )
+        self.assertEqual(50, len(definitions))
+
+        self.assertEqual(
+            42,
+            sum(
+                isinstance(definition, CharacterDefinition)
+                for definition in definitions
+            ),
+        )
+
+        self.assertEqual(
+            8,
+            sum(
+                isinstance(definition, ClimaxDefinition)
+                for definition in definitions
+            ),
+        )
+
+    def test_42_8_deck_builds_50_unique_instances(self):
+        cards = build_deck(
+            TEST_42_T_001_8_T_002,
+            "P1",
+        )
+
+        self.assertEqual(50, len(cards))
+
+        self.assertEqual(
+            50,
+            len({card.instance_id for card in cards}),
+        )
+
+        self.assertEqual(
+            42,
+            sum(
+                card.definition.code == "T-001"
+                for card in cards
+            ),
+        )
+
+        self.assertEqual(
+            8,
+            sum(
+                card.definition.code == "T-002"
+                for card in cards
+            ),
+        )
+
+    def test_seven_climax_cards_are_legal(self):
+        character = load_card("TEST/T-001.json")
+        climax = load_card("TEST/T-002.json")
+
+        definitions = (
+            [character] * 43
+            + [climax] * 7
+        )
+
+        validate_deck(definitions)
+
+    def test_nine_climax_cards_are_illegal_even_with_50_total(self):
+        character = load_card("TEST/T-001.json")
+        climax = load_card("TEST/T-002.json")
+
+        definitions = (
+            [character] * 41
+            + [climax] * 9
+        )
+
+        with self.assertRaises(ValueError):
+            validate_deck(definitions)
+
+    def test_zero_climax_cards_remain_legal(self):
+        _, definitions = load_deck_definitions(
+            TEST_ALL_T_001
+        )
+
+        validate_deck(definitions)
+        
 if __name__ == "__main__":
     unittest.main()
