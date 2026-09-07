@@ -6,7 +6,7 @@ import random
 from pathlib import Path
 from actions import MulliganAction, AdvancePhaseAction, ClockAction, PlayCardAction
 from phases import PHASES
-from cards import Card
+from cards import Card, ClimaxDefinition
 from deck_loader import build_deck, resolve_deck_path, DEFAULT_TEST_DECK
 from rule_resolution import (
     STAGE_SLOTS,
@@ -19,7 +19,7 @@ from zones import Zone
 from resolution import ResolutionContext, collect_triggers, resolve_pending_effects, InterruptRule
 from match_result import MatchResult
 
-VERSION = 6
+VERSION = 7
 CLOCK_CAPACITY = 50
 PLAYERS = ("P1", "P2")
 
@@ -33,7 +33,15 @@ class PlayerState:
     stock: list[Card] = field(default_factory=list)
     memory: list[Card] = field(default_factory=list)
     climax: list[Card] = field(default_factory=list)
+    resolution_zone: list[Card] = field(default_factory=list)
     stage: dict[str, list[Card]] = field(default_factory=lambda: {slot: [] for slot in STAGE_SLOTS})
+
+
+@dataclass(frozen=True)
+class DamageResult:
+    requested: int
+    revealed: tuple[str, ...]
+    cancelled: bool
 
 
 @dataclass
@@ -62,6 +70,12 @@ def other(player):
 
 def state_hash(state, legacy=False, version=VERSION):
     values = asdict(state)
+
+    # Resolution Zone entered persisted state in V7.
+    if legacy or version < 7:
+        for player in values["players"].values():
+            player.pop("resolution_zone")
+
     if legacy or version < 5:
         values.pop("result")
     if legacy or version < 4:
@@ -144,6 +158,8 @@ class Session:
             return player.memory
         if zone == Zone.CLIMAX:
             return player.climax
+        if zone == Zone.RESOLUTION:
+            return player.resolution_zone
 
         if zone == Zone.STAGE:
             if slot not in STAGE_SLOTS:
@@ -435,6 +451,126 @@ class Session:
         # movement are fully resolved.
         self._resolve_interrupt_rules(player_id)
         return card
+
+    def _deal_damage(self, player_id, amount, *, reason="damage"):
+        # Resolve one damage process. Storage convention is top-first.
+        if player_id not in PLAYERS:
+            raise ValueError("玩家无效")
+        if type(amount) is not int or amount < 0:
+            raise ValueError("伤害值必须是非负整数")
+
+        if amount == 0:
+            return DamageResult(0, (), False)
+
+        state = self.state
+        player = state.players[player_id]
+        turn_player = state.current_player or state.first_player
+        context = ResolutionContext(
+            turn_player=turn_player,
+            non_turn_player=other(turn_player),
+            event_cursor=len(self.events),
+        )
+
+        self.events.append({
+            "kind": "damage_started",
+            "player": player_id,
+            "amount": amount,
+            "reason": reason,
+        })
+
+        damage_card_ids = []
+        cancelled = False
+
+        for _ in range(amount):
+            self._resolve_interrupt_rules(player_id)
+
+            if not player.deck:
+                raise ValueError("伤害处理中牌库与等候室均无法提供下一张牌")
+
+            card = self._move_card(
+                player_id,
+                Zone.DECK,
+                Zone.RESOLUTION,
+                destination_index=0,
+                reason="damage_reveal",
+            )
+            damage_card_ids.append(card.instance_id)
+
+            # Deck-empty Refresh may interrupt immediately after this reveal.
+            self._resolve_interrupt_rules(player_id)
+
+            # Special defeat during damage processing:
+            #
+            # After all applicable interrupt rules have been given a chance to resolve,
+            # if Deck and Waiting Room are both empty and Resolution Zone contains no
+            # Climax, the player loses immediately.
+            #
+            # The revealed damage cards remain in Resolution Zone. The normal
+            # damage-hit step must not continue.
+            if (
+                not player.deck
+                and not player.waiting_room
+                and not any(
+                    isinstance(
+                        resolution_card.definition,
+                        ClimaxDefinition,
+                    )
+                    for resolution_card in player.resolution_zone
+                )
+            ):
+                self._apply_defeat_result((player_id,))
+
+                return DamageResult(
+                    requested=amount,
+                    revealed=tuple(damage_card_ids),
+                    cancelled=False,
+                )
+
+            if isinstance(card.definition, ClimaxDefinition):
+                cancelled = True
+                break
+
+        destination = Zone.WAITING_ROOM if cancelled else Zone.CLOCK
+        move_reason = "damage_cancel" if cancelled else "damage_hit"
+
+        # Logical simultaneous batch:
+        # reveal order [1,2,3] moved one-by-one to destination index 0 produces
+        # top-first [3,2,1,...], so bottom->top is ...1,2,3.
+        # No interrupt checkpoint is allowed inside this loop.
+        for card_id in damage_card_ids:
+            self._move_card(
+                player_id,
+                Zone.RESOLUTION,
+                destination,
+                card_id=card_id,
+                destination_index=0,
+                reason=move_reason,
+            )
+
+        # Interrupt only after the whole batch has reached its destination.
+        self._resolve_interrupt_rules(player_id)
+
+        result = DamageResult(
+            requested=amount,
+            revealed=tuple(damage_card_ids),
+            cancelled=cancelled,
+        )
+
+        completed_event = {
+            "kind": "damage_completed",
+            "player": player_id,
+            "requested": amount,
+            "revealed": list(damage_card_ids),
+            "cancelled": cancelled,
+            "reason": reason,
+        }
+
+        self._resolve_resolution_point(
+            context,
+            timing_events=(completed_event,),
+        )
+
+        return result
 
     def _defeated_players_at_check_timing(self):
         """Snapshot all players satisfying the current defeat condition.
@@ -758,7 +894,7 @@ class Session:
     @classmethod
     def from_replay(cls, data):
         version = data.get("version")
-        if version not in (1, 2, 3, 4, 5, VERSION):
+        if version not in (1, 2, 3, 4, 5, 6, VERSION):
             raise ValueError("不支持的 Replay 版本")
 
         legacy = version == 1

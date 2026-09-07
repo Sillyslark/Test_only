@@ -12,4 +12,5 @@ class Zone(str, Enum):
     STOCK = "stock"
     MEMORY = "memory"
     CLIMAX = "climax"
+    RESOLUTION = "resolution_zone"
     STAGE = "stage"

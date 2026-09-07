@@ -11,10 +11,10 @@ CHOOSE_DECK = "TEST/Test_All_T_001_Choose.json"
 
 
 class ReplayDeckChoiceTests(unittest.TestCase):
-    def test_current_replay_version_is_six(self):
-        self.assertEqual(6, VERSION)
+    def test_current_replay_version_is_seven(self):
+        self.assertEqual(7, VERSION)
 
-    def test_v6_replay_records_both_selected_decks(self):
+    def test_current_replay_records_both_selected_decks(self):
         session = Session(
             42,
             p1_deck=CHOOSE_DECK,
@@ -23,7 +23,7 @@ class ReplayDeckChoiceTests(unittest.TestCase):
 
         data = session.replay_data()
 
-        self.assertEqual(6, data["version"])
+        self.assertEqual(7, data["version"])
         self.assertEqual(
             {
                 "P1": CHOOSE_DECK,
@@ -32,7 +32,7 @@ class ReplayDeckChoiceTests(unittest.TestCase):
             data["config"]["decks"],
         )
 
-    def test_v6_replay_restores_selected_decks(self):
+    def test_current_replay_restores_selected_decks(self):
         session = Session(
             42,
             p1_deck=CHOOSE_DECK,
@@ -58,7 +58,7 @@ class ReplayDeckChoiceTests(unittest.TestCase):
         self.assertEqual(session.hashes, restored.hashes)
         self.assertEqual(session.replay_data(), restored.replay_data())
 
-    def test_v6_missing_deck_file_fails_instead_of_falling_back(self):
+    def test_current_replay_missing_deck_file_fails_instead_of_falling_back(self):
         session = Session(
             42,
             p1_deck=CHOOSE_DECK,
@@ -70,7 +70,7 @@ class ReplayDeckChoiceTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             Session.from_replay(data)
 
-    def test_v6_missing_or_malformed_deck_config_is_rejected(self):
+    def test_current_replay_missing_or_malformed_deck_config_is_rejected(self):
         session = Session(42)
 
         cases = []
