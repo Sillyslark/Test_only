@@ -1,24 +1,16 @@
 from copy import deepcopy
 import json
 import unittest
-
+from tests.helpers import at_clock
 from actions import AdvancePhaseAction, ClockAction
 from cards import Card, load_card
 from engine import Session, other, state_hash
-from test_turns import opened
+from tests.helpers import opened
 from ui.zones import clock_slots
 
 
 TEST_CARD = load_card("TEST/T-001.json")
 
-
-def at_clock():
-    session = opened()
-    for _ in range(2):
-        session.dispatch(
-            AdvancePhaseAction(session.state.current_player)
-        )
-    return session
 
 
 class ClockTests(unittest.TestCase):

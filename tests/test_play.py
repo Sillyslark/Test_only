@@ -2,22 +2,16 @@ from copy import deepcopy
 from dataclasses import replace
 import json
 import unittest
-
+from tests.helpers import at_main
 from actions import AdvancePhaseAction, PlayCardAction
 from cards import CardDefinition, load_card
 from engine import Session, Zone, other
 from rule_resolution import STAGE_SLOTS, resolve_stage_overlaps
-from test_turns import opened
+from tests.helpers import opened
 
 
 TEST_CARD = load_card("TEST/T-001.json")
 
-
-def at_main():
-    session = opened()
-    for _ in range(3):
-        session.dispatch(AdvancePhaseAction(session.state.current_player))
-    return session
 
 
 class PlayTests(unittest.TestCase):

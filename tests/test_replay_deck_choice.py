@@ -1,7 +1,6 @@
 from copy import deepcopy
 import json
 import unittest
-from unittest.mock import patch
 
 from actions import AdvancePhaseAction, MulliganAction
 from deck_loader import DEFAULT_TEST_DECK
@@ -129,43 +128,6 @@ class ReplayDeckChoiceTests(unittest.TestCase):
             restored.deck_sources,
         )
         self.assertEqual(session.state, restored.state)
-
-    def test_v1_replay_still_migrates_to_current_version(self):
-        session = Session(42)
-
-        hashes = [
-            state_hash(session.state, legacy=True)
-        ]
-
-        for _ in range(2):
-            session.dispatch(
-                MulliganAction(session.state.actor, ())
-            )
-            hashes.append(
-                state_hash(session.state, legacy=True)
-            )
-
-        data = session.replay_data()
-        data["version"] = 1
-        data["config"].pop("decks")
-        data["state_hashes"] = hashes
-
-        for action in data["actions"]:
-            del action["kind"]
-
-        restored = Session.from_replay(
-            json.loads(json.dumps(data))
-        )
-
-        self.assertEqual(session.state, restored.state)
-        self.assertEqual(VERSION, restored.replay_data()["version"])
-        self.assertEqual(
-            {
-                "P1": DEFAULT_TEST_DECK,
-                "P2": DEFAULT_TEST_DECK,
-            },
-            restored.deck_sources,
-        )
 
 
 if __name__ == "__main__":

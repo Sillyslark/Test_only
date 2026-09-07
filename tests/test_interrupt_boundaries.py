@@ -3,7 +3,7 @@ import unittest
 
 from engine import Session
 from resolution import InterruptRule
-from test_clock import at_clock
+from tests.helpers import at_clock
 from zones import Zone
 
 

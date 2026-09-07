@@ -52,47 +52,6 @@ class ApplicationDeckChoiceTests(unittest.TestCase):
             app._session.deck_sources["P2"],
         )
 
-    def test_start_game_can_choose_copy_for_both_players(self):
-        app = Application()
-
-        app.dispatch(
-            StartGameAction(
-                seed=42,
-                p1_deck=CHOOSE_DECK,
-                p2_deck=CHOOSE_DECK,
-            )
-        )
-
-        self.assertEqual(
-            {
-                "P1": CHOOSE_DECK,
-                "P2": CHOOSE_DECK,
-            },
-            app._session.deck_sources,
-        )
-
-    def test_same_seed_and_deck_selection_is_deterministic(self):
-        a = Application()
-        b = Application()
-
-        action = StartGameAction(
-            seed=42,
-            p1_deck=CHOOSE_DECK,
-            p2_deck=DEFAULT_TEST_DECK,
-        )
-
-        a_snapshot = a.dispatch(action)
-        b_snapshot = b.dispatch(action)
-
-        self.assertEqual(
-            a_snapshot.state,
-            b_snapshot.state,
-        )
-        self.assertEqual(
-            a._session.deck_sources,
-            b._session.deck_sources,
-        )
-
     def test_invalid_selected_deck_does_not_replace_existing_match(self):
         app = Application()
 

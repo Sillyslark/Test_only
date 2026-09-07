@@ -4,7 +4,7 @@ import unittest
 
 from actions import ClockAction
 from engine import Session
-from test_clock import at_clock
+from tests.helpers import at_clock
 
 
 def all_cards(player):

@@ -3,7 +3,7 @@ import unittest
 
 from actions import AdvancePhaseAction, ClockAction
 from engine import Session
-from test_turns import opened
+from tests.helpers import opened
 
 
 def play_until_refresh(session, max_steps=500):

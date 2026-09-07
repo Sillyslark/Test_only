@@ -1,19 +1,12 @@
 from copy import deepcopy
 import json
 import unittest
-
+from tests.helpers import opened
 from actions import AdvancePhaseAction, MulliganAction, StartGameAction
 from application import Application
-from engine import Session, other, state_hash
+from engine import Session, VERSION, other, state_hash
 from phases import PHASES
 
-from engine import Session, VERSION
-
-def opened():
-    session = Session(42)
-    for _ in range(2):
-        session.dispatch(MulliganAction(session.state.actor, ()))
-    return session
 
 
 class TurnTests(unittest.TestCase):

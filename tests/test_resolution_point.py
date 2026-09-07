@@ -7,8 +7,8 @@ from engine import Session
 from match_result import MatchResult
 from resolution import ResolutionContext
 from rule_resolution import STAGE_SLOTS
-from test_play import at_main
-from test_turns import opened
+from tests.helpers import at_main
+from tests.helpers import opened
 from zones import Zone
 
 

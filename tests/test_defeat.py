@@ -4,7 +4,7 @@ import unittest
 from actions import AdvancePhaseAction
 from engine import Session
 from match_result import MatchResult
-from test_turns import opened
+from tests.helpers import opened
 from zones import Zone
 
 
