@@ -1063,6 +1063,9 @@ class Session:
         elif phase == "draw":
             self._resolve_draw_phase()
 
+        elif phase == "main":
+            self._resolve_main_phase()
+
         self.events.append({
             "kind": "phase_processed",
             "player": self.state.current_player,
@@ -1093,6 +1096,17 @@ class Session:
         })
 
         return card
+
+    def _resolve_main_phase(self):
+        # Future:
+        # 主要阶段本身当前没有自动执行的阶段规则。
+        #
+        # 后续这里可以作为：
+        # - 主要阶段开始后的规则处理
+        # - 自动效果处理完成后的阶段处理入口
+        #
+        # 当前为空实现。
+        return None
 
     def _open_action_window(self, phase):
         self.events.append({
@@ -1178,6 +1192,27 @@ class Session:
 
             self.actions.append(action)
             self.hashes.append(state_hash(state))
+
+            return event
+
+        if state.phase == "main":
+            self._end_phase("main")
+            self._enter_phase("climax")
+
+            event = {
+                "kind": "phase_changed",
+                "player": state.current_player,
+                "turn": state.turn_number,
+                "phase": "climax",
+            }
+
+            # 暂时保留，兼容 UI / Replay / 旧测试。
+            self.events.append(event)
+
+            self.actions.append(action)
+            self.hashes.append(
+                state_hash(state)
+            )
 
             return event
 
