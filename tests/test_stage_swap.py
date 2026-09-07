@@ -138,6 +138,71 @@ class StageSwapTests(unittest.TestCase):
         self.assertLessEqual(len(player.stage[a]), 1)
         self.assertLessEqual(len(player.stage[b]), 1)
 
+    def test_swap_event_is_inside_its_resolution_point(self):
+        session = at_main()
+        player_id = session.state.current_player
+
+        captured_contexts = []
+
+        original_resolve = (
+            session._resolve_resolution_point
+        )
+
+        def capture_resolution(
+            context=None,
+            **kwargs,
+        ):
+            result = original_resolve(
+                context,
+                **kwargs,
+            )
+
+            captured_contexts.append(result)
+
+            return result
+
+        session._resolve_resolution_point = (
+            capture_resolution
+        )
+
+        session.dispatch(
+            SwapStageSlotsAction(
+                player_id,
+                "front_left",
+                "back_left",
+            )
+        )
+
+        self.assertEqual(
+            1,
+            len(captured_contexts),
+        )
+
+        context = captured_contexts[0]
+
+        # 本次交换事件必须属于本次 Resolution Point。
+        swap_events = [
+            event
+            for event in context.events
+            if event["kind"]
+            == "stage_slots_swapped"
+        ]
+
+        self.assertEqual(
+            1,
+            len(swap_events),
+        )
+
+        self.assertEqual(
+            "front_left",
+            swap_events[0]["first_slot"],
+        )
+
+        self.assertEqual(
+            "back_left",
+            swap_events[0]["second_slot"],
+        )
+
     def test_invalid_swap_is_atomic(self):
         for case in (
             "same_slot",

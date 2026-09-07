@@ -42,6 +42,12 @@ class ResolutionContext:
     def add_effect(self, effect: TriggeredEffect):
         self.pool_for(effect.controller).append(effect)
 
+    def has_pending_effects(self) -> bool:
+        return bool(
+            self.turn_player_pool
+            or self.non_turn_player_pool
+        )
+
     def capture_new_events(self, session_events: list[dict]) -> list[dict]:
         """Capture only events not yet seen by this resolution point."""
         new_events = session_events[self.event_cursor:]

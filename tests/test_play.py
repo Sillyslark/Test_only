@@ -53,11 +53,26 @@ class PlayTests(unittest.TestCase):
         self.assertEqual(old, player.waiting_room[0])
 
         events = session.events[start:]
+
         self.assertEqual(
-            ["card_moved", "card_moved", "card_played"],
+            [
+                "card_moved",
+                "card_moved",
+                "card_played",
+                "action_window_opened",
+            ],
             [event["kind"] for event in events],
         )
-        self.assertEqual("stage_overlap", events[1]["reason"])
+
+        self.assertEqual(
+            "stage_overlap",
+            events[1]["reason"],
+        )
+
+        self.assertEqual(
+            "main",
+            events[-1]["phase"],
+        )
 
         cards = (
             player.deck

@@ -158,14 +158,52 @@ class Session:
         self.deck_sources = dict(deck_sources)
         self.state = GameState(seed, first, players, rng.getstate())
         self.actions = []
-        self.events = [{"kind": "game_started", "seed": seed, "first_player": first}]
+        self.events = [
+            {
+                "kind": "game_started",
+                "seed": seed,
+                "first_player": first,
+            }
+        ]
+
+        # 当前尚未完成的 Resolution Point。
+        #
+        # 正常情况下为 None。
+        # 如果某个时点产生待处理效果，则暂存在这里，
+        # 在效果池清空前不重新开放普通 Action Window。
+        self.pending_resolution_context = None
+        self.pending_continuation = None
+
         self.hashes = [state_hash(self.state)]
+
+    def _has_pending_effects(self):
+        context = self.pending_resolution_context
+
+        return (
+            context is not None
+            and context.has_pending_effects()
+        )
+
+    def _require_main_action_window(self, player_id):
+        if self.state.phase != "main":
+            raise ValueError("当前不在主要阶段")
+
+        if player_id != self.state.current_player:
+            raise ValueError("只有当前回合玩家可以执行主要阶段操作")
+
+        if self._has_pending_effects():
+            raise ValueError(
+                "仍有待处理效果，不能执行主要阶段操作"
+            )
 
     def legal_actions(self, player_id):
         if player_id not in PLAYERS:
             raise ValueError("玩家无效")
 
         if self.state.result != MatchResult.ONGOING:
+            return ()
+
+        if self._has_pending_effects():
             return ()
 
         if self.state.actor == player_id:
@@ -802,10 +840,71 @@ class Session:
         if result != MatchResult.ONGOING:
             return context
 
-        new_events = context.capture_new_events(self.events)
-        collect_triggers(new_events, context)
-        resolve_pending_effects(context)
+        new_events = context.capture_new_events(
+            self.events
+        )
+
+        collect_triggers(
+            new_events,
+            context,
+        )
+
+        # -------------------------------------------------
+        # Pending Effect boundary
+        # -------------------------------------------------
+
+        if context.has_pending_effects():
+            # 当前已经产生待处理效果。
+            #
+            # 先保存整个 ResolutionContext，
+            # 暂停普通阶段操作。
+            #
+            # 未来 Effect Choice / AUTO resolver
+            # 会从这里继续处理。
+            self.pending_resolution_context = context
+            return context
+
+        # 效果池为空，当前 Resolution Point 完成。
+        self.pending_resolution_context = None
+
         return context
+
+    def _resolve_phase_timing(
+        self,
+        kind,
+        phase,
+    ):
+        """
+        Resolve one phase timing event through the normal
+        Resolution / Trigger / Pending Effect pipeline.
+
+        Examples:
+            phase_started(main)
+            phase_ended(main)
+        """
+        state = self.state
+
+        context = ResolutionContext(
+            turn_player=state.current_player,
+            non_turn_player=other(
+                state.current_player
+            ),
+            event_cursor=len(self.events),
+        )
+
+        event = {
+            "kind": kind,
+            "player": state.current_player,
+            "turn": state.turn_number,
+            "phase": phase,
+        }
+
+        self._resolve_resolution_point(
+            context,
+            timing_events=(event,),
+        )
+
+        return event
 
     def dispatch(self, action: MulliganAction | AdvancePhaseAction | ClockAction | PlayCardAction):
         if self.state.result != MatchResult.ONGOING:
@@ -877,10 +976,14 @@ class Session:
 
     def _play_card(self, action):
         state = self.state
-        if state.phase != "main" or state.mulligans_completed != 2:
-            raise ValueError("只能在主要阶段使用角色卡")
-        if action.player_id != state.current_player:
-            raise ValueError("只有当前玩家可以出牌")
+
+        if state.mulligans_completed != 2:
+            raise ValueError("请先完成双方换牌")
+
+        self._require_main_action_window(
+            action.player_id
+        )
+
         if action.target_slot not in STAGE_SLOTS:
             raise ValueError("舞台位置无效")
         player = state.players[action.player_id]
@@ -922,17 +1025,23 @@ class Session:
         )
 
         self.actions.append(action)
-        self.hashes.append(state_hash(state))
+        self.hashes.append(
+            state_hash(state)
+        )
+
+        # Main Phase 中一次玩家操作处理完毕后，
+        # 只有效果池为空才能重新开放普通操作。
+        self._reopen_main_action_window_if_ready()
+
         return event
 
     def _swap_stage_slots(self, action):
         state = self.state
 
-        if state.phase != "main":
-            raise ValueError("只有主要阶段可以交换舞台位置")
-
-        if action.player_id != state.current_player:
-            raise ValueError("只能操作当前回合玩家的舞台")
+        # Main Phase 普通操作统一合法性检查。
+        self._require_main_action_window(
+            action.player_id
+        )
 
         if action.first_slot not in STAGE_SLOTS:
             raise ValueError("第一个舞台位置无效")
@@ -945,17 +1054,40 @@ class Session:
 
         player = state.players[action.player_id]
 
-        # ---------------------------------------------
-        # 所有验证到这里已经完成。
-        # 从这里开始才真正修改状态。
-        # ---------------------------------------------
+        # -------------------------------------------------
+        # Resolution Point 必须在产生交换事件之前建立。
+        #
+        # event_cursor 记录“本次操作开始前”的事件位置，
+        # 这样后续 stage_slots_swapped 才属于这个时点。
+        # -------------------------------------------------
 
-        player.stage[action.first_slot], player.stage[action.second_slot] = (
+        context = ResolutionContext(
+            turn_player=state.current_player,
+            non_turn_player=other(
+                state.current_player
+            ),
+            event_cursor=len(self.events),
+        )
+
+        # -------------------------------------------------
+        # 所有验证已经完成。
+        # 从这里开始修改游戏状态。
+        # -------------------------------------------------
+
+        player.stage[
+            action.first_slot
+        ], player.stage[
+            action.second_slot
+        ] = (
             player.stage[action.second_slot],
             player.stage[action.first_slot],
         )
 
-        player.markers[action.first_slot], player.markers[action.second_slot] = (
+        player.markers[
+            action.first_slot
+        ], player.markers[
+            action.second_slot
+        ] = (
             player.markers[action.second_slot],
             player.markers[action.first_slot],
         )
@@ -967,17 +1099,35 @@ class Session:
             "second_slot": action.second_slot,
         }
 
-        self.events.append(event)
+        # -------------------------------------------------
+        # 进入本次交换对应的 Resolution Point。
+        #
+        # 因为 context 是在交换事件产生前建立的，
+        # capture_new_events() 可以捕获：
+        #
+        # stage_slots_swapped
+        #
+        # 以及此后该时点产生的其他事件。
+        # -------------------------------------------------
 
-        # 给未来“角色移动到其他位置时”的触发效果留出处理点。
         self._resolve_resolution_point(
-            stage_player_ids=(action.player_id,),
+            context,
+            stage_player_ids=(
+                action.player_id,
+            ),
+            timing_events=(
+                event,
+            ),
         )
 
         self.actions.append(action)
         self.hashes.append(
             state_hash(state)
         )
+
+        # 只有 Resolution 完成且没有 Pending Effect，
+        # 才重新开放 Main Action Window。
+        self._reopen_main_action_window_if_ready()
 
         return event
 
@@ -1045,12 +1195,34 @@ class Session:
         state = self.state
         state.phase = phase
 
-        self.events.append({
-            "kind": "phase_started",
-            "player": state.current_player,
-            "turn": state.turn_number,
-            "phase": phase,
-        })
+        # -------------------------------------------------
+        # Phase Start timing
+        # -------------------------------------------------
+
+        if phase == "main":
+            self._resolve_phase_timing(
+                "phase_started",
+                phase,
+            )
+
+            # “主要阶段开始时”的效果尚未处理完，
+            # 不能继续执行 Main Process，
+            # 更不能打开普通操作窗口。
+            if self._has_pending_effects():
+                self.pending_continuation = (
+                    "phase_start",
+                    phase,
+                )
+                return
+
+        else:
+            # 其他阶段暂时保持原行为。
+            self.events.append({
+                "kind": "phase_started",
+                "player": state.current_player,
+                "turn": state.turn_number,
+                "phase": phase,
+            })
 
         self._resolve_phase_process(phase)
 
@@ -1109,6 +1281,12 @@ class Session:
         return None
 
     def _open_action_window(self, phase):
+        if self.state.result != MatchResult.ONGOING:
+            return False
+
+        if self._has_pending_effects():
+            return False
+
         self.events.append({
             "kind": "action_window_opened",
             "player": self.state.current_player,
@@ -1116,14 +1294,44 @@ class Session:
             "phase": phase,
         })
 
+        return True
+
+    def _reopen_main_action_window_if_ready(self):
+        if self.state.phase != "main":
+            return False
+
+        if self.state.result != MatchResult.ONGOING:
+            return False
+
+        if self._has_pending_effects():
+            return False
+
+        return self._open_action_window("main")
 
     def _end_phase(self, phase):
+        if phase == "main":
+            self._resolve_phase_timing(
+                "phase_ended",
+                phase,
+            )
+
+            if self._has_pending_effects():
+                self.pending_continuation = (
+                    "phase_end",
+                    phase,
+                )
+                return False
+
+            return True
+
         self.events.append({
             "kind": "phase_ended",
             "player": self.state.current_player,
             "turn": self.state.turn_number,
             "phase": phase,
         })
+
+        return True
 
     def _advance_phase(self, action):
         state = self.state
@@ -1196,7 +1404,26 @@ class Session:
             return event
 
         if state.phase == "main":
-            self._end_phase("main")
+            self._require_main_action_window(
+                action.player_id
+            )
+
+            phase_ended = self._end_phase(
+                "main"
+            )
+
+            # Main End 时产生了待处理效果。
+            #
+            # Main 尚未真正移交给 Climax，
+            # 等效果全部处理完以后再继续。
+            if not phase_ended:
+                return {
+                    "kind": "phase_end_pending",
+                    "player": state.current_player,
+                    "turn": state.turn_number,
+                    "phase": "main",
+                }
+
             self._enter_phase("climax")
 
             event = {
@@ -1206,7 +1433,6 @@ class Session:
                 "phase": "climax",
             }
 
-            # 暂时保留，兼容 UI / Replay / 旧测试。
             self.events.append(event)
 
             self.actions.append(action)
@@ -1337,3 +1563,53 @@ class Session:
         if hashes != data.get("state_hashes"):
             raise ValueError("Replay 状态校验失败，文件或运行环境不兼容")
         return session
+
+    def _continue_after_pending_effects(self):
+        if self._has_pending_effects():
+            return False
+
+        continuation = self.pending_continuation
+
+        if continuation is None:
+            return False
+
+        self.pending_continuation = None
+
+        kind, phase = continuation
+
+        # ---------------------------------------------
+        # Main Phase Start effects finished
+        # ---------------------------------------------
+        if (
+            kind == "phase_start"
+            and phase == "main"
+        ):
+            self._resolve_phase_process("main")
+
+            self._open_action_window("main")
+
+            return True
+
+        # ---------------------------------------------
+        # Main Phase End effects finished
+        # ---------------------------------------------
+        if (
+            kind == "phase_end"
+            and phase == "main"
+        ):
+            self._enter_phase("climax")
+
+            event = {
+                "kind": "phase_changed",
+                "player": self.state.current_player,
+                "turn": self.state.turn_number,
+                "phase": "climax",
+            }
+
+            self.events.append(event)
+
+            return True
+
+        raise ValueError(
+            "未知 Pending Effect continuation"
+        )
