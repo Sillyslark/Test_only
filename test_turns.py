@@ -7,6 +7,7 @@ from application import Application
 from engine import Session, other, state_hash
 from phases import PHASES
 
+from engine import Session, VERSION
 
 def opened():
     session = Session(42)
@@ -85,8 +86,10 @@ class TurnTests(unittest.TestCase):
             del action['kind']
         restored = Session.from_replay(data)
         self.assertEqual(session.state, restored.state)
-        self.assertEqual(4, restored.replay_data()['version'])
-
+        self.assertEqual(
+            VERSION,
+            restored.replay_data()["version"],
+        )
 
 if __name__ == '__main__':
     unittest.main()

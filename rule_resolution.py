@@ -120,3 +120,13 @@ def resolve_refresh(player, player_id, move_to_deck, shuffle_deck, move_refresh_
         "recycled": waiting_ids,
         "refresh_point": refresh_point.instance_id,
     }
+
+
+
+def is_deck_waiting_defeat(player):
+    """First defeat condition: Deck and Waiting Room are both empty.
+
+    This only reports whether the condition is satisfied. The engine decides
+    when a check timing occurs and applies simultaneous match results.
+    """
+    return not player.deck and not player.waiting_room

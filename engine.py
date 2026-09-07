@@ -5,13 +5,20 @@ import json
 import random
 from actions import MulliganAction, AdvancePhaseAction, ClockAction, PlayCardAction
 from phases import PHASES
-from rule_resolution import STAGE_SLOTS, resolve_stage_overlaps, resolve_level_up, resolve_refresh
+from cards import Card
+from deck_loader import build_deck, TEST_ALL_T_001
+from rule_resolution import (
+    STAGE_SLOTS,
+    resolve_stage_overlaps,
+    resolve_level_up,
+    resolve_refresh,
+    is_deck_waiting_defeat,
+)
 from zones import Zone
 from resolution import ResolutionContext, collect_triggers, resolve_pending_effects, InterruptRule
-from cards import Card, T_001
-from deck_loader import build_deck, TEST_ALL_T_001
+from match_result import MatchResult
 
-VERSION = 4
+VERSION = 5
 CLOCK_CAPACITY = 50
 PLAYERS = ("P1", "P2")
 
@@ -39,6 +46,7 @@ class GameState:
     turn_number: int = 0
     phase: str | None = None
     clock_used: bool = False
+    result: MatchResult = MatchResult.ONGOING
 
     @property
     def actor(self):
@@ -53,6 +61,8 @@ def other(player):
 
 def state_hash(state, legacy=False, version=VERSION):
     values = asdict(state)
+    if legacy or version < 5:
+        values.pop("result")
     if legacy or version < 4:
         for player in values["players"].values():
             player.pop("stage")
@@ -404,7 +414,80 @@ class Session:
         self._resolve_interrupt_rules(player_id)
         return card
 
+    def _defeated_players_at_check_timing(self):
+        """Snapshot all players satisfying the current defeat condition.
+
+        This is a check-type rule: merely satisfying the condition between
+        check timings does not immediately change the match result.
+        """
+        return tuple(
+            player_id
+            for player_id in PLAYERS
+            if is_deck_waiting_defeat(
+                self.state.players[player_id]
+            )
+        )
+
+    def _apply_defeat_result(self, defeated_players):
+        """Apply all defeat results from one check timing simultaneously."""
+        defeated = set(defeated_players)
+
+        if not defeated:
+            return self.state.result
+
+        if defeated == set(PLAYERS):
+            result = MatchResult.BOTH_LOSE
+        elif "P1" in defeated:
+            result = MatchResult.P2_WIN
+        elif "P2" in defeated:
+            result = MatchResult.P1_WIN
+        else:
+            raise ValueError("败北玩家集合无效")
+
+        self.state.result = result
+        self.events.append({
+            "kind": "match_result_changed",
+            "result": result.value,
+            "defeated_players": list(defeated_players),
+        })
+        return result
+
+    def _resolve_check_timing(self, *, stage_player_ids=()):
+        """Resolve the currently implemented check-type rules.
+
+        Conditions are snapshotted before any check-type rule mutates state.
+        This matters because check-type rules at the same timing are considered
+        simultaneous by the game rules.
+
+        Implemented check rules:
+        - Deck and Waiting Room both empty -> defeat
+        - Stage overlap
+        """
+        defeated_players = self._defeated_players_at_check_timing()
+
+        # Stage overlap remains a check-type rule. Resolve its mutations only
+        # after the defeat-condition snapshot has been taken.
+        for player_id in stage_player_ids:
+            player = self.state.players[player_id]
+            resolve_stage_overlaps(
+                player,
+                player_id,
+                lambda source_slot, card_id, destination_index, pid=player_id: self._move_card(
+                    pid,
+                    Zone.STAGE,
+                    Zone.WAITING_ROOM,
+                    card_id=card_id,
+                    source_slot=source_slot,
+                    destination_index=destination_index,
+                    reason="stage_overlap",
+                ),
+            )
+
+        return self._apply_defeat_result(defeated_players)
+
     def dispatch(self, action: MulliganAction | AdvancePhaseAction | ClockAction | PlayCardAction):
+        if self.state.result != MatchResult.ONGOING:
+            raise ValueError("比赛已经结束")
         if isinstance(action, PlayCardAction):
             return self._play_card(action)
         if isinstance(action, ClockAction):
@@ -502,19 +585,10 @@ class Session:
             reason="play",
         )
 
-        # Mandatory rule handling for this timing: resolve Stage overlap first.
-        resolve_stage_overlaps(
-            player,
-            action.player_id,
-            lambda source_slot, card_id, destination_index: self._move_card(
-                action.player_id,
-                Zone.STAGE,
-                Zone.WAITING_ROOM,
-                card_id=card_id,
-                source_slot=source_slot,
-                destination_index=destination_index,
-                reason="stage_overlap",
-            ),
+        # Check timing: snapshot and resolve all check-type rules together.
+        # Defeat is snapshotted before Stage overlap can change Waiting Room.
+        self._resolve_check_timing(
+            stage_player_ids=(action.player_id,),
         )
 
         # "Played" belongs to the same timing as entry / overlap consequences.
@@ -611,7 +685,7 @@ class Session:
 
     @classmethod
     def from_replay(cls, data):
-        if data.get("version") not in (1, 2, 3, VERSION):
+        if data.get("version") not in (1, 2, 3, 4, VERSION):
             raise ValueError("不支持的 Replay 版本")
         legacy = data["version"] == 1
         session = cls(data["seed"])
