@@ -3,7 +3,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from actions import StartGameAction, MulliganAction, AdvancePhaseAction, ClockAction, PlayCardAction, SaveReplayAction, LoadReplayAction
+from actions import MulliganOptions, StartGameAction, MulliganAction, AdvancePhaseAction, ClockAction, PlayCardAction, SaveReplayAction, LoadReplayAction
 from application import Application
 from phases import PHASES, PHASE_NAMES
 from ui.zones import clock_slots
@@ -42,9 +42,7 @@ class App(tk.Tk):
         self.board.bind("<Configure>", lambda event: board_canvas.configure(scrollregion=board_canvas.bbox("all")))
         board_canvas.bind("<Configure>", lambda event: board_canvas.itemconfigure(board_window, width=event.width))
         self.confirm = ttk.Button(self, command=self.submit)
-        self.confirm.pack(pady=8)
         self.clock_confirm = ttk.Button(self, text="将所选手牌置于计时区顶部并抽 2 张", command=self.submit_clock)
-        self.clock_confirm.pack(pady=4)
         self.log = ttk.Label(self, padding=12, wraplength=1000)
         self.log.pack(fill="x")
         self.random_start()
@@ -77,10 +75,17 @@ class App(tk.Tk):
             child.destroy()
         state = self.view.state
         actor = state.actor
+        mulligan_options = next(
+            (option for option in self.view.legal_actions if isinstance(option, MulliganOptions)),
+            None,
+        )
         clock_available = state.phase == "clock" and not state.clock_used
         hand_actor = actor or (state.current_player if clock_available or state.phase == "main" else None)
-        phase = (f"轮到 {actor} 选择换牌（可选 0–5 张）" if actor else
-                 f"回合 {state.turn_number} · {state.current_player} · {PHASE_NAMES[state.phase]}")
+        phase = (
+            f"轮到 {actor} 选择换牌（可选 {mulligan_options.min_select}–{mulligan_options.max_select} 张）"
+            if mulligan_options is not None
+            else f"回合 {state.turn_number} · {state.current_player} · {PHASE_NAMES[state.phase]}"
+        )
         if state.phase == "main":
             phase += " · 选手牌后点击己方舞台位置出牌"
         self.status.config(text=f"先手：{state.first_player}　｜　{phase}")
@@ -127,8 +132,18 @@ class App(tk.Tk):
         else:
             next_phase = PHASES[PHASES.index(state.phase) + 1]
             button_text = f"进入{PHASE_NAMES[next_phase]}" + ("（抽 1 张）" if next_phase == "draw" else "")
-        self.confirm.config(text=button_text, state="normal")
-        self.clock_confirm.config(state="normal" if clock_available and len(self.selected) == 1 else "disabled")
+        self.confirm.pack_forget()
+        self.clock_confirm.pack_forget()
+
+        if mulligan_options is not None:
+            self.confirm.config(text=f"确认换 {len(self.selected)} 张", state="normal")
+            self.confirm.pack(pady=8)
+        elif actor is None:
+            self.confirm.config(text=button_text, state="normal")
+            self.confirm.pack(pady=8)
+            if clock_available and len(self.selected) == 1:
+                self.clock_confirm.config(state="normal")
+                self.clock_confirm.pack(pady=4)
         lines = [f"种子：{state.seed}。双方已洗牌并各抽 5 张。"]
         for e in self.view.events[1:][-3:]:
             if e['kind'] == 'mulligan_completed':
@@ -186,12 +201,25 @@ class App(tk.Tk):
                 f"{color} · 特征 {','.join(d.traits) or '无'}\n触发 {','.join(d.trigger_marks) or '无'}")
 
     def toggle(self, card_id):
-        if card_id in self.selected:
-            self.selected.remove(card_id)
+        mulligan_options = next(
+            (option for option in self.view.legal_actions if isinstance(option, MulliganOptions)),
+            None,
+        )
+
+        if mulligan_options is not None:
+            if card_id not in mulligan_options.selectable_card_ids:
+                return
+            if card_id in self.selected:
+                self.selected.remove(card_id)
+            elif len(self.selected) < mulligan_options.max_select:
+                self.selected.add(card_id)
         else:
-            if self.view.state.phase in ("clock", "main"):
-                self.selected.clear()
-            self.selected.add(card_id)
+            if card_id in self.selected:
+                self.selected.remove(card_id)
+            else:
+                if self.view.state.phase in ("clock", "main"):
+                    self.selected.clear()
+                self.selected.add(card_id)
         self.render()
 
     @staticmethod

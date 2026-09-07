@@ -2,8 +2,16 @@
 from pathlib import Path
 from . import pygame_stage_grid_mock_v15 as layout
 from application import Application
-from actions import (StartGameAction, MulliganAction, AdvancePhaseAction, ClockAction,
-                     PlayCardAction, SaveReplayAction, LoadReplayAction)
+from actions import (
+    MulliganOptions,
+    StartGameAction,
+    MulliganAction,
+    AdvancePhaseAction,
+    ClockAction,
+    PlayCardAction,
+    SaveReplayAction,
+    LoadReplayAction,
+)
 from phases import PHASES, PHASE_NAMES
 
 pg = layout.pygame
@@ -54,17 +62,58 @@ class PygameApp:
                 self.page = 0
         self.dirty = True
 
+    def mulligan_options(self):
+        return next(
+            (
+                option
+                for option in self.view.legal_actions
+                if isinstance(option, MulliganOptions)
+            ),
+            None,
+        )
+
     def select_card(self, pid, cid):
         s = self.view.state
-        actor = s.actor or (s.current_player if s.phase == 'main' or (s.phase == 'clock' and not s.clock_used) else None)
+        mulligan = self.mulligan_options()
+
+        # Mulligan 的选择规则直接来自 Engine。
+        if mulligan is not None:
+            if (
+                pid != mulligan.player_id
+                or cid not in mulligan.selectable_card_ids
+            ):
+                return
+
+            if cid in self.selected:
+                self.selected.remove(cid)
+            elif len(self.selected) < mulligan.max_select:
+                self.selected.add(cid)
+
+            self.dirty = True
+            return
+
+        # 其他阶段暂时沿用现有逻辑。
+        actor = (
+            s.current_player
+            if (
+                s.phase == 'main'
+                or (
+                    s.phase == 'clock'
+                    and not s.clock_used
+                )
+            )
+            else None
+        )
+
         if pid != actor:
             return
+
         if cid in self.selected:
             self.selected.remove(cid)
         else:
-            if not s.actor:
-                self.selected.clear()
+            self.selected.clear()
             self.selected.add(cid)
+
         self.dirty = True
 
     def select_slot(self, pid, slot):
@@ -206,31 +255,183 @@ class PygameApp:
         self.button(surface, pg.Rect(x+half+12, 225, half, 48), '随机新局', lambda: self.dispatch(StartGameAction()))
         self.button(surface, pg.Rect(x, 285, half, 48), '保存 Replay', lambda: self.replay_dialog(True))
         self.button(surface, pg.Rect(x+half+12, 285, half, 48), '载入 Replay', lambda: self.replay_dialog(False))
+
         selection = ', '.join(sorted(self.selected)) or '无'
-        self.text(surface, f'已选：{selection}\n目标：{NAMES.get(self.target, "未选择")}', pg.Rect(x, 350, width, 75), light, self.panel_font)
-        self.button(surface, pg.Rect(x, 435, width, 48), f'确认换 {len(self.selected)} 张（可选 0 张）',
-                    lambda: self.dispatch(MulliganAction(s.actor, tuple(self.selected))), bool(s.actor))
-        if s.actor:
-            advance = '完成换牌后可推进阶段'
-        elif s.phase == 'end':
-            advance = '结束回合 → 对方重置阶段'
-        elif s.phase == 'clock' and not s.clock_used:
-            advance = '跳过计时 → 主要阶段'
+
+        self.text(
+            surface,
+            f'已选：{selection}\n'
+            f'目标：{NAMES.get(self.target, "未选择")}',
+            pg.Rect(x, 350, width, 75),
+            light,
+            self.panel_font,
+        )
+
+        # -------------------------------------------------
+        # 游戏操作区
+        # 只创建当前真正可执行的按钮。
+        # -------------------------------------------------
+
+        action_y = 435
+        action_h = 48
+        action_gap = 12
+
+
+        def game_button(label, callback):
+            nonlocal action_y
+
+            self.button(
+                surface,
+                pg.Rect(
+                    x,
+                    action_y,
+                    width,
+                    action_h,
+                ),
+                label,
+                callback,
+            )
+
+            action_y += action_h + action_gap
+
+
+        mulligan = self.mulligan_options()
+
+        if mulligan is not None:
+            # 换牌阶段只显示换牌确认。
+            game_button(
+                (
+                    f'确认换 {len(self.selected)} 张'
+                    f'（可选 '
+                    f'{mulligan.min_select}–'
+                    f'{mulligan.max_select} 张）'
+                ),
+                lambda: self.dispatch(
+                    MulliganAction(
+                        mulligan.player_id,
+                        tuple(self.selected),
+                    )
+                ),
+            )
+
         else:
-            advance = '进入'+PHASE_NAMES[PHASES[PHASES.index(s.phase)+1]]
-        self.button(surface, pg.Rect(x, 495, width, 48), advance, lambda: self.dispatch(AdvancePhaseAction(s.current_player)), not s.actor)
-        self.button(surface, pg.Rect(x, 555, width, 48), '所选手牌 → 计时区顶部，抽 2 张',
-                    lambda: self.dispatch(ClockAction(s.current_player, next(iter(self.selected)))),
-                    s.phase == 'clock' and not s.clock_used and len(self.selected) == 1)
-        self.button(surface, pg.Rect(x, 615, width, 48), '确认出牌到所选己方位置',
-                    lambda: self.dispatch(PlayCardAction(s.current_player, next(iter(self.selected)), self.target)),
-                    s.phase == 'main' and len(self.selected) == 1 and self.target is not None)
-        self.text(surface, self.message, pg.Rect(x, 680, width, 85), (255, 218, 139), self.panel_font)
+            # 之后 Stand / Draw / Clock / Main
+            # 会逐步全部迁移到 legal_actions()。
+            #
+            # 现在暂时保留原规则判断，
+            # 但不可执行的按钮完全不绘制。
+
+            if s.phase == 'end':
+                advance = '结束回合 → 对方重置阶段'
+
+            elif (
+                s.phase == 'clock'
+                and not s.clock_used
+            ):
+                advance = '跳过计时 → 主要阶段'
+
+            else:
+                advance = (
+                    '进入'
+                    + PHASE_NAMES[
+                        PHASES[
+                            PHASES.index(s.phase) + 1
+                        ]
+                    ]
+                )
+
+            game_button(
+                advance,
+                lambda: self.dispatch(
+                    AdvancePhaseAction(
+                        s.current_player
+                    )
+                ),
+            )
+
+            # ClockAction：
+            # 只有真正可执行时才出现。
+            if (
+                s.phase == 'clock'
+                and not s.clock_used
+                and len(self.selected) == 1
+            ):
+                game_button(
+                    '所选手牌 → 计时区顶部，抽 2 张',
+                    lambda: self.dispatch(
+                        ClockAction(
+                            s.current_player,
+                            next(iter(self.selected)),
+                        )
+                    ),
+                )
+
+            # PlayCardAction：
+            # 只有选了牌 + 选了舞台位置时才出现。
+            if (
+                s.phase == 'main'
+                and len(self.selected) == 1
+                and self.target is not None
+            ):
+                game_button(
+                    '确认出牌到所选己方位置',
+                    lambda: self.dispatch(
+                        PlayCardAction(
+                            s.current_player,
+                            next(iter(self.selected)),
+                            self.target,
+                        )
+                    ),
+                )
+
+
+        # 操作按钮数量变化以后，
+        # 消息和说明区域自动向上/向下移动。
+        message_y = action_y + 8
+
+        self.text(
+            surface,
+            self.message,
+            pg.Rect(
+                x,
+                message_y,
+                width,
+                85,
+            ),
+            (255, 218, 139),
+            self.panel_font,
+        )
+
+        inspector_y = message_y + 105
+
         if self.inspection:
-            self.draw_inspector(surface, x, 785, width)
+            self.draw_inspector(
+                surface,
+                x,
+                inspector_y,
+                width,
+            )
+
         else:
-            self.text(surface, '中央：选手牌、选己方舞台位置。\n右侧：确认操作。\n点击卡组、控制室、计时区查看完整顺序。\n手牌与计时：底部在左；位置 #1 始终是顶部。',
-                      pg.Rect(x, 785, width, 190), light, self.panel_font)
+            self.text(
+                surface,
+                (
+                    '中央：选手牌、选己方舞台位置。\n'
+                    '右侧：仅显示当前可执行操作。\n'
+                    '点击卡组、控制室、计时区查看完整顺序。\n'
+                    '手牌与计时：底部在左；'
+                    '位置 #1 始终是顶部。'
+                ),
+                pg.Rect(
+                    x,
+                    inspector_y,
+                    width,
+                    190,
+                ),
+                light,
+                self.panel_font,
+            )
+            
         self.text(surface, '最近记录\n'+'\n'.join(self.event_text(e) for e in self.view.events[-4:]),
                   pg.Rect(x, self.size[1]-210, width, 200), light, self.panel_font)
 

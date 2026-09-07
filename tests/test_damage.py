@@ -932,5 +932,204 @@ class DamageResolutionZoneHashTests(unittest.TestCase):
             state_hash(cleared, version=6),
         )
 
+class DamageNestedInterruptTests(unittest.TestCase):
+    def test_refresh_point_level_up_finishes_before_damage_continues(self):
+        session = Session(301)
+
+        clock_cards = [
+            numbered_card(f"C{i}-T001", T001, 100 + i)
+            for i in range(1, 7)
+        ]
+        d1 = numbered_card("D1-T001", T001, 1)
+        d2 = numbered_card("D2-T001", T001, 2)
+        waiting = [
+            numbered_card(f"W{i}-T001", T001, 10 + i)
+            for i in range(1, 9)
+        ]
+
+        player = install_damage_refresh_case(
+            session,
+            deck_cards=[d1, d2],
+            waiting_cards=waiting,
+        )
+        player.clock[:] = list(reversed(clock_cards))
+
+        result = session._deal_damage("P1", 3)
+
+        self.assertFalse(result.cancelled)
+        self.assertEqual(3, len(result.revealed))
+        self.assertEqual(1, len(player.level))
+
+        relevant = [
+            (
+                event["kind"],
+                event.get("reason"),
+                event.get("card_id"),
+            )
+            for event in session.events
+            if (
+                event["kind"] in {
+                    "card_moved",
+                    "refresh_started",
+                    "refresh_completed",
+                    "level_up_started",
+                    "level_up_completed",
+                }
+                and (
+                    event["kind"] != "card_moved"
+                    or event.get("reason") in {
+                        "damage_reveal",
+                        "refresh_point",
+                        "level_up",
+                        "level_up_discard",
+                        "damage_hit",
+                    }
+                )
+            )
+        ]
+
+        first_reveal = next(
+            i
+            for i, event in enumerate(relevant)
+            if event == ("card_moved", "damage_reveal", "D1-T001")
+        )
+        second_reveal = next(
+            i
+            for i, event in enumerate(relevant)
+            if event == ("card_moved", "damage_reveal", "D2-T001")
+        )
+        refresh_point = next(
+            i
+            for i, event in enumerate(relevant)
+            if event == ("card_moved", "refresh_point", "W1-T001")
+        )
+        level_started = next(
+            i
+            for i, event in enumerate(relevant)
+            if event[0] == "level_up_started"
+        )
+        level_completed = next(
+            i
+            for i, event in enumerate(relevant)
+            if event[0] == "level_up_completed"
+        )
+        third_reveal = next(
+            i
+            for i, event in enumerate(relevant)
+            if (
+                event[0] == "card_moved"
+                and event[1] == "damage_reveal"
+                and event[2] not in {"D1-T001", "D2-T001"}
+            )
+        )
+        damage_hits = [
+            i
+            for i, event in enumerate(relevant)
+            if (
+                event[0] == "card_moved"
+                and event[1] == "damage_hit"
+            )
+        ]
+
+        self.assertLess(first_reveal, second_reveal)
+        self.assertLess(second_reveal, refresh_point)
+        self.assertLess(refresh_point, level_started)
+        self.assertLess(level_started, level_completed)
+        self.assertLess(level_completed, third_reveal)
+        self.assertEqual(3, len(damage_hits))
+        self.assertLess(third_reveal, min(damage_hits))
+
+    def test_refresh_induced_level_up_uses_choice_hook_before_damage_resumes(self):
+        session = Session(302)
+
+        clock_cards = [
+            numbered_card(f"C{i}-T001", T001, 100 + i)
+            for i in range(1, 7)
+        ]
+        d1 = numbered_card("D1-T001", T001, 1)
+        d2 = numbered_card("D2-T001", T001, 2)
+        waiting = [
+            numbered_card(f"W{i}-T001", T001, 10 + i)
+            for i in range(1, 9)
+        ]
+
+        player = install_damage_refresh_case(
+            session,
+            deck_cards=[d1, d2],
+            waiting_cards=waiting,
+        )
+        player.clock[:] = list(reversed(clock_cards))
+
+        choices = []
+
+        def choose_first_from_bottom(player_id, candidates):
+            choices.append(
+                (
+                    player_id,
+                    tuple(card.instance_id for card in candidates),
+                )
+            )
+            return candidates[-1].instance_id
+
+        session._choose_level_card = choose_first_from_bottom
+
+        result = session._deal_damage("P1", 3)
+
+        self.assertFalse(result.cancelled)
+        self.assertEqual(1, len(choices))
+        self.assertEqual("P1", choices[0][0])
+        self.assertEqual(7, len(choices[0][1]))
+        self.assertEqual(3, len(result.revealed))
+        self.assertEqual([], player.resolution_zone)
+
+    def test_damage_batch_reaching_fourteen_resolves_two_level_ups_after_batch(self):
+        session = Session(303)
+        player = session.state.players["P1"]
+
+        initial_clock = [
+            player.deck.pop()
+            for _ in range(6)
+        ]
+        player.clock[:] = initial_clock
+
+        start = len(session.events)
+        result = session._deal_damage("P1", 8)
+        events = session.events[start:]
+
+        self.assertFalse(result.cancelled)
+        self.assertEqual(8, len(result.revealed))
+
+        hit_indexes = [
+            i
+            for i, event in enumerate(events)
+            if (
+                event["kind"] == "card_moved"
+                and event.get("reason") == "damage_hit"
+            )
+        ]
+        level_start_indexes = [
+            i
+            for i, event in enumerate(events)
+            if event["kind"] == "level_up_started"
+        ]
+        level_complete_indexes = [
+            i
+            for i, event in enumerate(events)
+            if event["kind"] == "level_up_completed"
+        ]
+
+        self.assertEqual(8, len(hit_indexes))
+        self.assertEqual(2, len(level_start_indexes))
+        self.assertEqual(2, len(level_complete_indexes))
+        self.assertLess(max(hit_indexes), min(level_start_indexes))
+        self.assertLess(level_start_indexes[0], level_complete_indexes[0])
+        self.assertLess(level_complete_indexes[0], level_start_indexes[1])
+        self.assertLess(level_start_indexes[1], level_complete_indexes[1])
+
+        self.assertEqual(2, len(player.level))
+        self.assertEqual(0, len(player.clock))
+        self.assertEqual([], player.resolution_zone)
+
+
 if __name__ == "__main__":
     unittest.main()

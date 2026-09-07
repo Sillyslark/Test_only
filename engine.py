@@ -4,7 +4,7 @@ import hashlib
 import json
 import random
 from pathlib import Path
-from actions import MulliganAction, AdvancePhaseAction, ClockAction, PlayCardAction
+from actions import MulliganOptions, MulliganAction, AdvancePhaseAction, ClockAction, PlayCardAction
 from phases import PHASES
 from cards import Card, ClimaxDefinition
 from deck_loader import build_deck, resolve_deck_path, DEFAULT_TEST_DECK
@@ -135,6 +135,34 @@ class Session:
         self.actions = []
         self.events = [{"kind": "game_started", "seed": seed, "first_player": first}]
         self.hashes = [state_hash(self.state)]
+
+    def legal_actions(self, player_id):
+        if player_id not in PLAYERS:
+            raise ValueError("玩家无效")
+
+        if self.state.result != MatchResult.ONGOING:
+            return ()
+
+        if self.state.actor == player_id:
+            hand = self.state.players[player_id].hand
+            return (
+                MulliganOptions(
+                    player_id=player_id,
+                    selectable_card_ids=tuple(card.instance_id for card in hand),
+                    min_select=0,
+                    max_select=len(hand),
+                ),
+            )
+
+        if (
+            self.state.current_player == player_id
+            and self.state.phase == "stand"
+        ):
+            return (
+                AdvancePhaseAction(player_id),
+            )
+
+        return ()
 
     def _get_zone(self, player_id, zone, slot=None):
         if player_id not in PLAYERS:
@@ -739,12 +767,10 @@ class Session:
         event = {"kind": "mulligan_completed", "player": action.player_id,
                  "discarded": list(canonical.card_ids), "drawn": [c.instance_id for c in drawn]}
         self.events.append(event)
+
         if state.mulligans_completed == 2:
-            state.current_player = state.first_player
-            state.turn_number = 1
-            state.phase = PHASES[0]
-            self.events.append({"kind": "turn_started", "player": state.current_player,
-                                "turn": state.turn_number, "phase": state.phase})
+            self._start_turn(state.first_player)
+            
         self.hashes.append(state_hash(state))
         return event
 
@@ -839,12 +865,123 @@ class Session:
         self.hashes.append(state_hash(state))
         return event
 
+    def _start_turn(self, player_id):
+        state = self.state
+
+        state.current_player = player_id
+        state.turn_number += 1
+        state.clock_used = False
+
+        self.events.append({
+            "kind": "turn_started",
+            "player": player_id,
+            "turn": state.turn_number,
+
+            # 暂时保留 phase 字段，兼容当前 UI/event_text。
+            # 但语义上 turn_started 仍然先于 phase_started。
+            "phase": "stand",
+        })
+
+        self._enter_phase("stand")
+
+    def _enter_phase(self, phase):
+        state = self.state
+        state.phase = phase
+
+        self.events.append({
+            "kind": "phase_started",
+            "player": state.current_player,
+            "turn": state.turn_number,
+            "phase": phase,
+        })
+
+        self._resolve_phase_process(phase)
+
+        self._open_action_window(phase)
+
+    def _resolve_phase_process(self, phase):
+        if phase == "stand":
+            self._resolve_stand_phase()
+
+        elif phase == "draw":
+            # Draw 暂时仍沿用当前行为。
+            # 之后做 test_turn_draw_phase.py 时再正式整理。
+            card = self._draw_one(
+                self.state.current_player,
+                reason="draw",
+            )
+
+            self.events.append({
+                "kind": "card_drawn",
+                "player": self.state.current_player,
+                "card_id": card.instance_id,
+                "turn": self.state.turn_number,
+            })
+
+        self.events.append({
+            "kind": "phase_processed",
+            "player": self.state.current_player,
+            "turn": self.state.turn_number,
+            "phase": phase,
+        })
+
+    def _resolve_stand_phase(self):
+        # Future:
+        # 将当前玩家舞台上的横置角色全部变为竖置。
+        #
+        # 目前尚未实现角色朝向，所以先保留空处理。
+        return None
+
+    def _open_action_window(self, phase):
+        self.events.append({
+            "kind": "action_window_opened",
+            "player": self.state.current_player,
+            "turn": self.state.turn_number,
+            "phase": phase,
+        })
+
+
+    def _end_phase(self, phase):
+        self.events.append({
+            "kind": "phase_ended",
+            "player": self.state.current_player,
+            "turn": self.state.turn_number,
+            "phase": phase,
+        })
+
     def _advance_phase(self, action):
         state = self.state
         if state.mulligans_completed != 2 or state.phase is None:
             raise ValueError("请先完成双方换牌")
         if action.player_id != state.current_player:
             raise ValueError("只有当前回合玩家可以推进阶段")
+
+        if state.phase == "stand":
+            player = state.players[state.current_player]
+
+            if not player.deck and not player.waiting_room:
+                raise ValueError(
+                    "牌库为空且控制室无牌，无法进入抽卡阶段"
+                )
+
+            self._end_phase("stand")
+            self._enter_phase("draw")
+
+            event = {
+                "kind": "phase_changed",
+                "player": state.current_player,
+                "turn": state.turn_number,
+                "phase": "draw",
+            }
+
+            # 兼容目前 UI / Replay 对 phase_changed 的使用。
+            self.events.append(event)
+
+            self.actions.append(action)
+            self.hashes.append(state_hash(state))
+
+            return event
+        
         index = PHASES.index(state.phase)
         next_phase = PHASES[(index + 1) % len(PHASES)]
         player = state.players[state.current_player]

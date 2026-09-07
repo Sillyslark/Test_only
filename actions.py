@@ -5,6 +5,14 @@ from deck_loader import DEFAULT_TEST_DECK
 
 
 @dataclass(frozen=True)
+class MulliganOptions:
+    player_id: str
+    selectable_card_ids: tuple[str, ...]
+    min_select: int
+    max_select: int
+
+
+@dataclass(frozen=True)
 class MulliganAction:
     player_id: str
     card_ids: tuple[str, ...]

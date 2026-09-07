@@ -1,1 +1,1 @@
-"""Tkinter presentation layer."""
+"""WS Simulator presentation layer."""

@@ -21,6 +21,7 @@ from engine import GameState, Session
 class Snapshot:
     state: GameState
     events: tuple[dict, ...]
+    legal_actions: tuple[object, ...]
 
 
 class Application:
@@ -31,9 +32,17 @@ class Application:
         """Detached display data: consumers cannot mutate the actual match."""
         if self._session is None:
             raise ValueError("尚未开始游戏")
+        state = deepcopy(self._session.state)
+        active_player = state.actor or state.current_player
+        legal_actions = (
+            self._session.legal_actions(active_player)
+            if active_player is not None
+            else ()
+        )
         return Snapshot(
-            deepcopy(self._session.state),
+            state,
             tuple(deepcopy(self._session.events)),
+            tuple(deepcopy(legal_actions)),
         )
 
     def dispatch(self, action):

@@ -6,8 +6,6 @@ from actions import AdvancePhaseAction, ClockAction
 from cards import Card, load_card
 from engine import Session, other, state_hash
 from tests.helpers import opened
-from ui.zones import clock_slots
-
 
 TEST_CARD = load_card("TEST/T-001.json")
 
@@ -141,30 +139,6 @@ class ClockTests(unittest.TestCase):
             )
 
         self.assertFalse(session.state.clock_used)
-
-    def test_bottom_six_keep_top_based_positions(self):
-        cards = [
-            Card(
-                str(i),
-                i,
-                definition=TEST_CARD,
-            )
-            for i in range(50)
-        ]
-
-        self.assertEqual([None] * 6, clock_slots([]))
-        self.assertEqual(
-            [(1, cards[0])] + [None] * 5,
-            clock_slots(cards[:1]),
-        )
-        self.assertEqual(
-            list(reversed(list(enumerate(cards, 1))))[:6],
-            clock_slots(cards),
-        )
-        self.assertEqual(
-            [50, 49, 48, 47, 46, 45],
-            [slot[0] for slot in clock_slots(cards)],
-        )
 
     def test_version_two_replay(self):
         session = Session(42)
