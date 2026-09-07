@@ -5,11 +5,13 @@ from application import Application
 from actions import (
     MulliganOptions,
     ClockOptions,
+    StageSwapOptions,
     StartGameAction,
     MulliganAction,
     AdvancePhaseAction,
     ClockAction,
     PlayCardAction,
+    SwapStageSlotsAction,
     SaveReplayAction,
     LoadReplayAction,
 )
@@ -26,9 +28,16 @@ class PygameApp:
     def __init__(self, application=None):
         self.application = application or Application()
         self.view = self.application.dispatch(StartGameAction())
+
         self.selected = set()
         self.target = None
+
+        # Main Phase 中选中的舞台格。
+        # 保持顺序，用于“第3个选择替换最早选择”的规则。
+        self.selected_stage_slots = []
+
         self.scroll = {'P1': 0, 'P2': 0}
+
         self.seed_text = str(self.view.state.seed)
         self.seed_focused = False
         self.message = '开局完成，请先手选择换牌。'
@@ -54,6 +63,7 @@ class PygameApp:
             self.view = view
             if not isinstance(action, SaveReplayAction):
                 self.selected.clear()
+                self.selected_stage_slots.clear()
                 self.target = None
                 self.scroll = {'P1': 0, 'P2': 0}
             self.seed_text = str(view.state.seed)
@@ -79,6 +89,16 @@ class PygameApp:
                 option
                 for option in self.view.legal_actions
                 if isinstance(option, ClockOptions)
+            ),
+            None,
+        )
+
+    def stage_swap_options(self):
+        return next(
+            (
+                option
+                for option in self.view.legal_actions
+                if isinstance(option, StageSwapOptions)
             ),
             None,
         )
@@ -138,10 +158,50 @@ class PygameApp:
 
     def select_slot(self, pid, slot):
         s = self.view.state
-        if s.phase == 'main' and pid == s.current_player:
-            self.target = slot
-            self.message = f'目标：{pid} {NAMES[slot]}，请在右侧确认出牌。'
-            self.dirty = True
+
+        if (
+            s.phase != 'main'
+            or pid != s.current_player
+        ):
+            return
+
+        # 已经选中的格子再次点击：
+        # 取消这个格子的选择。
+        if slot in self.selected_stage_slots:
+            self.selected_stage_slots.remove(slot)
+
+        else:
+            # 最多同时选择两个格子。
+            #
+            # 若已经有两个，再选择新的格子：
+            # 自动取消最早选择的那个。
+            if len(self.selected_stage_slots) >= 2:
+                self.selected_stage_slots.pop(0)
+
+            self.selected_stage_slots.append(slot)
+
+        # 暂时保留 target，兼容现有角色出牌逻辑。
+        #
+        # 最新选中的格子作为角色出牌目标。
+        self.target = (
+            self.selected_stage_slots[-1]
+            if self.selected_stage_slots
+            else None
+        )
+
+        if self.selected_stage_slots:
+            names = '、'.join(
+                NAMES[selected_slot]
+                for selected_slot in self.selected_stage_slots
+            )
+
+            self.message = (
+                f'已选择舞台位置：{names}'
+            )
+        else:
+            self.message = '已取消舞台位置选择。'
+
+        self.dirty = True
 
     def browse(self, pid, zone):
         self.inspection, self.page = (pid, zone), 0
@@ -241,7 +301,18 @@ class PygameApp:
             slot_id = SLOTS[suffix]
             cards = s.players[pid].stage[slot_id]
             rect = self.shown(slot.card_rect())
-            self.card(surface, rect, cards[0] if cards else None, f'{pid} {NAMES[slot_id]}', pid == s.current_player and slot_id == self.target)
+
+            self.card(
+                surface,
+                rect,
+                cards[0] if cards else None,
+                f'{pid} {NAMES[slot_id]}',
+                (
+                    pid == s.current_player
+                    and slot_id in self.selected_stage_slots
+                ),
+            )
+
             self.hits.append((rect, lambda p=pid, z=slot_id: self.select_slot(p, z)))
         for pid, prefix in (('P1', 'lower'), ('P2', 'upper')):
             for label, rect in self.zones[prefix+'_single']:
@@ -276,12 +347,24 @@ class PygameApp:
         self.button(surface, pg.Rect(x, 285, half, 48), '保存 Replay', lambda: self.replay_dialog(True))
         self.button(surface, pg.Rect(x+half+12, 285, half, 48), '载入 Replay', lambda: self.replay_dialog(False))
 
-        selection = ', '.join(sorted(self.selected)) or '无'
+        selection = (
+            ', '.join(sorted(self.selected))
+            or '无'
+        )
+
+        stage_selection = (
+            '、'.join(
+                NAMES[slot]
+                for slot in self.selected_stage_slots
+            )
+            if self.selected_stage_slots
+            else '未选择'
+        )
 
         self.text(
             surface,
-            f'已选：{selection}\n'
-            f'目标：{NAMES.get(self.target, "未选择")}',
+            f'已选手牌：{selection}\n'
+            f'已选舞台：{stage_selection}',
             pg.Rect(x, 350, width, 75),
             light,
             self.panel_font,
@@ -440,22 +523,119 @@ class PygameApp:
 
             # PlayCardAction：
             # 只有选了牌 + 选了舞台位置时才出现。
-            if (
-                s.phase == 'main'
-                and len(self.selected) == 1
-                and self.target is not None
-            ):
-                game_button(
-                    '确认出牌到所选己方位置',
-                    lambda: self.dispatch(
-                        PlayCardAction(
-                            s.current_player,
-                            next(iter(self.selected)),
-                            self.target,
-                        )
-                    ),
+            # -------------------------------------------------
+            # Main Phase
+            # -------------------------------------------------
+            if s.phase == 'main':
+                selected_character = None
+
+                if len(self.selected) == 1:
+                    candidate = next(iter(self.selected))
+
+                    player = s.players[s.current_player]
+
+                    card = next(
+                        (
+                            card
+                            for card in player.hand
+                            if card.instance_id == candidate
+                        ),
+                        None,
+                    )
+
+                    if (
+                        card is not None
+                        and card.definition.kind == 'character'
+                    ):
+                        selected_character = card
+
+                # “使用角色或事件卡”属于主要阶段的固定规则入口，
+                # 因此始终显示。
+                #
+                # 当前 Event 尚未实现，所以第一版只有：
+                #
+                #   合法 Character
+                #   +
+                #   已选择己方 Stage slot
+                #
+                # 才能真正点击。
+                # -------------------------------------------------
+                # 使用角色或事件卡
+                # -------------------------------------------------
+
+                # Character 出牌目前要求：
+                # 1. 只选择了一张合法角色卡
+                # 2. 只选择了一个舞台格
+                can_play_card = (
+                    selected_character is not None
+                    and len(self.selected_stage_slots) == 1
+                    and self.target is not None
                 )
 
+                rect = pg.Rect(
+                    x,
+                    action_y,
+                    width,
+                    action_h,
+                )
+
+                self.button(
+                    surface,
+                    rect,
+                    '使用角色或事件卡',
+                    (
+                        lambda: self.dispatch(
+                            PlayCardAction(
+                                s.current_player,
+                                selected_character.instance_id,
+                                self.target,
+                            )
+                        )
+                    ),
+                    enabled=can_play_card,
+                )
+
+                action_y += action_h + action_gap
+
+                # -------------------------------------------------
+                # 交换舞台位置
+                # -------------------------------------------------
+
+                swap_options = self.stage_swap_options()
+
+                can_swap_stage = (
+                    swap_options is not None
+                    and len(self.selected_stage_slots) == 2
+                    and all(
+                        slot in swap_options.selectable_slots
+                        for slot in self.selected_stage_slots
+                    )
+                )
+
+                rect = pg.Rect(
+                    x,
+                    action_y,
+                    width,
+                    action_h,
+                )
+
+                self.button(
+                    surface,
+                    rect,
+                    '交换舞台位置',
+                    (
+                        lambda: self.dispatch(
+                            SwapStageSlotsAction(
+                                s.current_player,
+                                self.selected_stage_slots[0],
+                                self.selected_stage_slots[1],
+                            )
+                        )
+                    ),
+                    enabled=can_swap_stage,
+                )
+
+                action_y += action_h + action_gap
 
         # 操作按钮数量变化以后，
         # 消息和说明区域自动向上/向下移动。
@@ -608,10 +788,13 @@ class PygameApp:
                             elif event.key == pg.K_ESCAPE:
                                 self.seed_focused = False
                             self.dirty = True
+
                         elif event.key == pg.K_ESCAPE:
                             self.selected.clear()
+                            self.selected_stage_slots.clear()
                             self.target = None
                             self.dirty = True
+
                     elif event.type == pg.MOUSEBUTTONDOWN and event.button == 1:
                         pos = layout.window_to_board_pos(event.pos, screen.get_size(), self.size)
                         self.seed_focused = pos is not None and self.seed_rect.collidepoint(pos)

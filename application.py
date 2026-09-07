@@ -11,6 +11,7 @@ from actions import (
     AdvancePhaseAction,
     ClockAction,
     PlayCardAction,
+    SwapStageSlotsAction,
     SaveReplayAction,
     LoadReplayAction,
 )
@@ -72,6 +73,7 @@ class Application:
                 AdvancePhaseAction,
                 ClockAction,
                 PlayCardAction,
+                SwapStageSlotsAction,
                 SaveReplayAction,
             ),
         ):
@@ -85,6 +87,7 @@ class Application:
                     AdvancePhaseAction,
                     ClockAction,
                     PlayCardAction,
+                    SwapStageSlotsAction,
                 ),
             ):
                 self._session.dispatch(action)

@@ -11,8 +11,8 @@ CHOOSE_DECK = "TEST/Test_All_T_001_Choose.json"
 
 
 class ReplayDeckChoiceTests(unittest.TestCase):
-    def test_current_replay_version_is_seven(self):
-        self.assertEqual(7, VERSION)
+    def test_current_replay_version_is_nine(self):
+        self.assertEqual(9, VERSION)
 
     def test_current_replay_records_both_selected_decks(self):
         session = Session(
@@ -23,7 +23,7 @@ class ReplayDeckChoiceTests(unittest.TestCase):
 
         data = session.replay_data()
 
-        self.assertEqual(7, data["version"])
+        self.assertEqual(9, data["version"])
         self.assertEqual(
             {
                 "P1": CHOOSE_DECK,

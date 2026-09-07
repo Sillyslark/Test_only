@@ -14,3 +14,4 @@ class Zone(str, Enum):
     CLIMAX = "climax"
     RESOLUTION = "resolution_zone"
     STAGE = "stage"
+    MARKER = "marker"

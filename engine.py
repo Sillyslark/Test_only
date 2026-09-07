@@ -7,10 +7,12 @@ from pathlib import Path
 from actions import (
     MulliganOptions,
     ClockOptions,
+    StageSwapOptions,
     MulliganAction,
     AdvancePhaseAction,
     ClockAction,
     PlayCardAction,
+    SwapStageSlotsAction,
 )
 from phases import PHASES
 from cards import Card, ClimaxDefinition
@@ -26,7 +28,7 @@ from zones import Zone
 from resolution import ResolutionContext, collect_triggers, resolve_pending_effects, InterruptRule
 from match_result import MatchResult
 
-VERSION = 7
+VERSION = 9
 CLOCK_CAPACITY = 50
 PLAYERS = ("P1", "P2")
 
@@ -41,8 +43,18 @@ class PlayerState:
     memory: list[Card] = field(default_factory=list)
     climax: list[Card] = field(default_factory=list)
     resolution_zone: list[Card] = field(default_factory=list)
-    stage: dict[str, list[Card]] = field(default_factory=lambda: {slot: [] for slot in STAGE_SLOTS})
-
+    stage: dict[str, list[Card]] = field(
+        default_factory=lambda: {
+            slot: []
+            for slot in STAGE_SLOTS
+        }
+    )
+    markers: dict[str, list[Card]] = field(
+        default_factory=lambda: {
+            slot: []
+            for slot in STAGE_SLOTS
+        }
+    )
 
 @dataclass(frozen=True)
 class DamageResult:
@@ -75,8 +87,14 @@ def other(player):
     return "P2" if player == "P1" else "P1"
 
 
+
 def state_hash(state, legacy=False, version=VERSION):
     values = asdict(state)
+
+    # Marker zones entered persisted state in V8.
+    if legacy or version < 8:
+        for player in values["players"].values():
+            player.pop("markers")
 
     # Resolution Zone entered persisted state in V7.
     if legacy or version < 7:
@@ -191,6 +209,18 @@ class Session:
                 ),
             )
 
+        if (
+            self.state.current_player == player_id
+            and self.state.phase == "main"
+        ):
+            return (
+                AdvancePhaseAction(player_id),
+                StageSwapOptions(
+                    player_id=player_id,
+                    selectable_slots=tuple(STAGE_SLOTS),
+                ),
+            )
+
         return ()
 
     def _get_zone(self, player_id, zone, slot=None):
@@ -222,6 +252,12 @@ class Session:
             if slot not in STAGE_SLOTS:
                 raise ValueError("舞台位置无效")
             return player.stage[slot]
+
+        if zone == Zone.MARKER:
+            if slot not in STAGE_SLOTS:
+                raise ValueError("Marker 对应的舞台位置无效")
+
+            return player.markers[slot]
 
         raise ValueError("未知区域")
 
@@ -284,8 +320,32 @@ class Session:
         ):
             adjusted_destination_index -= 1
 
-        source_name = source_slot if source == Zone.STAGE else source.value
-        destination_name = destination_slot if destination == Zone.STAGE else destination.value
+        source_name = (
+            source.value
+            if source == Zone.MARKER
+            else source_slot
+            if source == Zone.STAGE
+            else source.value
+        )
+
+        destination_name = (
+            destination.value
+            if destination == Zone.MARKER
+            else destination_slot
+            if destination == Zone.STAGE
+            else destination.value
+        )
+
+        if destination == Zone.MARKER:
+            if destination_slot not in STAGE_SLOTS:
+                raise ValueError("Marker 对应的舞台位置无效")
+
+            player = self.state.players[player_id]
+
+            if not player.stage[destination_slot]:
+                raise ValueError(
+                    "没有角色的舞台位置不能放置 Marker"
+                )
 
         # All validation has completed; mutation begins here.
         card = source_zone.pop(source_index)
@@ -298,14 +358,22 @@ class Session:
         else:
             destination_zone.insert(adjusted_destination_index, card)
 
-        self.events.append({
+        event = {
             "kind": "card_moved",
             "player": player_id,
             "card_id": card.instance_id,
             "source": source_name,
             "destination": destination_name,
             "reason": reason,
-        })
+        }
+
+        if source == Zone.MARKER:
+            event["source_slot"] = source_slot
+
+        if destination == Zone.MARKER:
+            event["destination_slot"] = destination_slot
+
+        self.events.append(event)
 
         return card
 
@@ -746,6 +814,10 @@ class Session:
             return self._play_card(action)
         if isinstance(action, ClockAction):
             return self._clock(action)
+
+        if isinstance(action, SwapStageSlotsAction):
+            return self._swap_stage_slots(action)
+        
         if isinstance(action, AdvancePhaseAction):
             return self._advance_phase(action)
         state = self.state
@@ -851,6 +923,62 @@ class Session:
 
         self.actions.append(action)
         self.hashes.append(state_hash(state))
+        return event
+
+    def _swap_stage_slots(self, action):
+        state = self.state
+
+        if state.phase != "main":
+            raise ValueError("只有主要阶段可以交换舞台位置")
+
+        if action.player_id != state.current_player:
+            raise ValueError("只能操作当前回合玩家的舞台")
+
+        if action.first_slot not in STAGE_SLOTS:
+            raise ValueError("第一个舞台位置无效")
+
+        if action.second_slot not in STAGE_SLOTS:
+            raise ValueError("第二个舞台位置无效")
+
+        if action.first_slot == action.second_slot:
+            raise ValueError("必须选择两个不同的舞台位置")
+
+        player = state.players[action.player_id]
+
+        # ---------------------------------------------
+        # 所有验证到这里已经完成。
+        # 从这里开始才真正修改状态。
+        # ---------------------------------------------
+
+        player.stage[action.first_slot], player.stage[action.second_slot] = (
+            player.stage[action.second_slot],
+            player.stage[action.first_slot],
+        )
+
+        player.markers[action.first_slot], player.markers[action.second_slot] = (
+            player.markers[action.second_slot],
+            player.markers[action.first_slot],
+        )
+
+        event = {
+            "kind": "stage_slots_swapped",
+            "player": action.player_id,
+            "first_slot": action.first_slot,
+            "second_slot": action.second_slot,
+        }
+
+        self.events.append(event)
+
+        # 给未来“角色移动到其他位置时”的触发效果留出处理点。
+        self._resolve_resolution_point(
+            stage_player_ids=(action.player_id,),
+        )
+
+        self.actions.append(action)
+        self.hashes.append(
+            state_hash(state)
+        )
+
         return event
 
     def _clock(self, action):
@@ -1091,6 +1219,7 @@ class Session:
                         AdvancePhaseAction: "advance_phase",
                         ClockAction: "clock",
                         PlayCardAction: "play_card",
+                        SwapStageSlotsAction: "swap_stage_slots",
                     }[type(action)],
                     **asdict(action),
                 }
@@ -1102,7 +1231,7 @@ class Session:
     @classmethod
     def from_replay(cls, data):
         version = data.get("version")
-        if version not in (1, 2, 3, 4, 5, 6, VERSION):
+        if version not in (1, 2, 3, 4, 5, 6, 7, 8, VERSION):
             raise ValueError("不支持的 Replay 版本")
 
         legacy = version == 1
@@ -1157,6 +1286,15 @@ class Session:
                 command = ClockAction(action["player_id"], action["card_id"])
             elif action["kind"] == "play_card" and version >= 4:
                 command = PlayCardAction(action["player_id"], action["card_id"], action["target_slot"])
+            elif (
+                action["kind"] == "swap_stage_slots"
+                and version >= 9
+            ):
+                command = SwapStageSlotsAction(
+                    action["player_id"],
+                    action["first_slot"],
+                    action["second_slot"],
+                )
             else:
                 raise ValueError("未知 Replay 动作")
             session.dispatch(command)

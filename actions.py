@@ -40,6 +40,17 @@ class PlayCardAction:
     card_id: str
     target_slot: str
 
+@dataclass(frozen=True)
+class StageSwapOptions:
+    player_id: str
+    selectable_slots: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SwapStageSlotsAction:
+    player_id: str
+    first_slot: str
+    second_slot: str
 
 @dataclass(frozen=True)
 class StartGameAction:
