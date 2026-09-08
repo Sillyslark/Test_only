@@ -5,6 +5,7 @@
 本节主要讨论：
 
 - Player 的不同身份
+- Owner、Master 与 Player Control 的边界
 - Deck 的开局合法性前置检查
 - Shuffle
 - Starting Player
@@ -231,30 +232,111 @@ Play Timing 最终如何表示，留待后续流程系统确定。
 
 二者不能统一解释为“当前行动玩家”。
 
-### 4.2.7 Master
+### 4.2.7 Owner 与 Master
 
-**官方术语：Master**
+**官方术语：**
 
-Master 是 Card、Ability、Zone 等规则关系中的独立概念。
+```text
+Owner
+Master
+```
 
-它不能与：
+二者必须严格区分。
+
+对 Card 而言：
+
+```text
+Owner
+→ 游戏开始时该 Card 属于哪名 Player 的 Deck
+→ 本局中保持不变
+```
+
+规范名称：
+
+```python
+owner_id
+```
+
+`Master` 表示 Card、Ability、Effect 等对象按官方规则确定的当前主控方。
+
+对于位于 Zone 中的 Card，其 Master 应依据该 Zone 的 Master 规则确定。
+
+例如：
+
+```text
+Card A
+owner_id = P1
+
+Card A → P2 的某个 Zone
+
+Owner
+→ 仍然是 P1
+
+Master
+→ 按 P2 Zone 的规则确定，可成为 P2
+```
+
+因此不得把 `Owner` 与 `Master` 合并，也不得使用项目自造的 `Controller` 代替官方 `Master`。
+
+Ability 与 Effect 的 Master 具有各自的官方确定规则，留到能力与效果章节展开。
+
+### 4.2.8 Player Control
+
+某些特殊 Card Effect 可以使一名 Player 在一定范围内获得对另一名 Player 的控制，例如代替对手操作其一个 Turn。
+
+这种情况下，官方规则身份与“实际由谁提供决定”必须分开。
+
+例如：
+
+```text
+P1 在 P2 的一个 Turn 中控制 P2
+```
+
+该 Turn 仍然满足：
+
+```text
+turn_player_id = P2
+P2.turn_count 正常增加
+P2 的 Hand / Deck / Stage 等仍属于 P2
+Card Owner / Master 仍按各自规则判断
+```
+
+改变的是：
+
+```text
+当规则要求 P2 作出决定时
+→ 实际由 P1 代替 P2 提供该决定
+```
+
+本项目将这种关系暂称为：
+
+```text
+Player Control
+```
+
+它是为了执行特殊效果而建立的项目概念，不等同于官方 `Master`。
+
+未来可以考虑通过：
+
+```python
+PlayerControl
+get_decision_maker(player_id)
+```
+
+等结构表达，但本节不锁定具体实现。
+
+因此不得通过修改以下概念来模拟 Player Control：
 
 ```text
 PlayerId
 Starting Player
 Turn Player
-获得 Play Timing 的 Player
+Owner
+Master
+Zone 所属玩家
 ```
 
-混为一谈。
-
-规范候选：
-
-```python
-master_id
-```
-
-具体哪些对象保存或能够查询 Master，由后续相关章节确定。
+Player Control 的具体持续范围以及恢复方式，由产生该关系的规则或 Effect 决定，留到 Ability / Effect 与流程系统统一设计。
 
 ---
 
@@ -666,7 +748,9 @@ UI 如果需要显示全局回合编号或其他形式，可以根据底层规�
 | 回合玩家 | Turn Player | `turn_player_id` | 官方概念 |
 | 非回合玩家 | Non-turn Player | 由 `turn_player_id` 推导 | 官方概念 |
 | 行动时点 | Play Timing | `PlayTiming` / 具体实现待定 | 官方概念 |
-| 主控方 | Master | `master_id` | 官方概念，具体实现待定 |
+| 所有者 | Owner | `owner_id` | 官方概念；对 Card 为本局固定归属 |
+| 主控方 | Master | `master_id` / 查询接口待定 | 官方概念；不能与 Owner 或 Player Control 混同 |
+| 玩家控制关系 | — | `PlayerControl`（候选） | 项目概念；表示谁代替某 Player 提供游戏决定 |
 | 洗牌 | Shuffle | 通用 `shuffle` / `shuffle_zone(...)` 候选 | 官方概念，接口待定 |
 | 初始手牌 | Initial Hand | 不建立长期状态字段 | 官方概念，可通过历史追溯 |
 | 初始手牌交换 | Mulligan | `MulliganAction` | 官方术语，结构待统一 |
@@ -725,11 +809,31 @@ play_timing_player_id
 
 ---
 
-### 4.10.3 Master 的具体实现
+### 4.10.3 Owner、Master 与 Player Control 的具体实现
 
-本节只确认 Master 是独立官方规则概念。
+本节确认：
 
-`master_id` 最终保存在哪里、哪些对象具有 Master，以及如何查询，留到相关章节决定。
+```text
+Owner
+→ 官方概念；Card 的固定归属
+
+Master
+→ 官方概念；按对象及当前规则状态确定
+
+Player Control
+→ 项目概念；表示谁代替另一名 Player 作出游戏决定
+```
+
+暂不决定：
+
+- `owner_id` 最终保存在哪一层；
+- Card Master 是否始终动态推导；
+- Ability / Effect Master 的最终状态结构；
+- `PlayerControl` 的具体数据结构；
+- `get_decision_maker(...)` 是否作为正式查询接口；
+- Player Control 的持续时间、嵌套与恢复机制。
+
+这些内容分别留到 Card、Ability / Effect 与流程系统统一设计。
 
 ---
 
@@ -853,7 +957,48 @@ players[player_id].turn_count
 
 ---
 
-### 4.10.10 Game Preparation 与正式游戏之间的状态机实现
+### 4.10.10 Extra Turn 与 Turn Scheduling
+
+部分 Ability / Effect 可以使某名 Player 追加获得一个 Turn。
+
+因此第 5 节不能把 Turn 结束后的后继关系简单写死为：
+
+```python
+turn_player_id = other_player(turn_player_id)
+```
+
+必须允许例如：
+
+```text
+P1 Turn
+→ P1 Extra Turn
+→ P2 Turn
+```
+
+以及：
+
+```text
+P1 Turn
+→ P2 Turn
+→ P2 Extra Turn
+→ P1 Turn
+```
+
+Extra Turn 是独立于 Player Control 的通用规则机制。
+
+本节暂不决定：
+
+- Extra Turn 的官方术语与完整通用裁定细节；
+- 多个 Extra Turn 同时待执行时的顺序；
+- 是否采用 Turn Queue / Pending Turn 等结构；
+- Extra Turn 与正常 Turn 顺序的最终调度算法；
+- Extra Turn 与 Player Control 等持续效果的交互。
+
+这些问题统一留到第 5 节 Turn Flow 核对并设计。
+
+---
+
+### 4.10.11 Game Preparation 与正式游戏之间的状态机实现
 
 规则边界已经确定：
 
