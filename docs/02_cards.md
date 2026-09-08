@@ -2,6 +2,8 @@
 
 本节用于统一卡片本身相关概念的命名。
 
+本节确定卡片相关概念、名称、基础数据模型方向和边界。具体代码迁移按本节规范逐步进行。
+
 **主要类别：**
 
 - `Card`
@@ -16,8 +18,6 @@
 - `TriggerIcon`
 - `CardOrientation`
 - `CardFaceState`
-
-本节确定卡片相关概念、名称、基础数据模型方向和边界。具体代码迁移按本节规范逐步进行。
 
 信息公开范围不在本节定义。它与区域、卡片正反面以及特殊规则共同有关，将在场地区域章节中单独讨论。
 
@@ -44,7 +44,7 @@ CardDefinition
 
 它保存属于卡片本身的基础 / 印刷 Card Information，不应因为卡片在游戏中的移动、方向变化、正反面变化、持续效果、临时效果或结算过程而改变。
 
-三种具体卡片定义统一从 `CardDefinition` 派生：
+当前代码已经完成统一公共基类：
 
 ```text
 CardDefinition
@@ -53,7 +53,7 @@ CardDefinition
 └── ClimaxDefinition
 ```
 
-规范结构方向：
+规范结构：
 
 ```python
 @dataclass(frozen=True)
@@ -65,8 +65,6 @@ class CardDefinition:
 
     card_type: ClassVar[CardType]
 ```
-
-具体卡片定义：
 
 ```python
 @dataclass(frozen=True)
@@ -97,9 +95,7 @@ class ClimaxDefinition(CardDefinition):
     card_type: ClassVar[CardType] = CardType.CLIMAX
 ```
 
-这里的 `card_type` 由具体 Definition 类型固定，而不是创建对象时任意传入的普通实例字段。
-
-因此不得出现：
+`card_type` 由具体 Definition 类型固定，不是创建对象时任意传入的普通实例字段。因此不得出现：
 
 ```text
 CharacterDefinition
@@ -109,44 +105,25 @@ card_type = CardType.CLIMAX
 
 这样的矛盾状态。
 
-卡片 JSON 中仍然可以保存用于 Loader 判别的卡片种类字段；Loader 根据该字段决定实例化 `CharacterDefinition`、`EventDefinition` 或 `ClimaxDefinition`。实例化完成后，Python 对象的 `card_type` 由其具体类型保证。
-
-当前代码已经存在：
-
-```python
-CharacterDefinition
-ClimaxDefinition
-CardDefinition
-AnyCardDefinition
-```
-
-其中当前：
-
-```python
-CardDefinition = CharacterDefinition
-```
-
-只是早期兼容结构，不能代表三种卡片定义的共同概念，应在本轮卡片数据模型整理中迁移。
-
-正式公共 `CardDefinition` 建立后，原则上可以直接用：
+当前已经可以直接使用：
 
 ```python
 definition: CardDefinition
 ```
 
-表达“任意卡片定义”。因此 `AnyCardDefinition` 不再是长期必要抽象；迁移期间是否临时保留兼容别名，根据现有引用决定。
+表达“任意卡片定义”。旧的 `AnyCardDefinition` 兼容抽象已经移除。
 
 | 中文概念 | 规范程序名称 | 当前程序名称 | 状态 | 备注 |
 | --- | --- | --- | --- | --- |
-| 通用卡片定义 | `CardDefinition` | 当前为 `CharacterDefinition` 的兼容别名 | 待迁移 | 成为三种具体 Definition 的共同基类 |
-| 角色卡定义 | `CharacterDefinition` | `CharacterDefinition` | 已确认 | 具有角色卡专用信息 |
-| 事件卡定义 | `EventDefinition` | 尚未实现 | 待实现 | 本轮卡片模型整理时加入 |
-| 高潮卡定义 | `ClimaxDefinition` | `ClimaxDefinition` | 已确认 | — |
-| 任意卡片定义 | `CardDefinition` | `AnyCardDefinition` | 待迁移 | 公共基类建立后原则上不再需要 |
+| 通用卡片定义 | `CardDefinition` | `CardDefinition` | 已实现 | 三种具体 Definition 的共同基类 |
+| 角色卡定义 | `CharacterDefinition` | `CharacterDefinition` | 已实现 | 具有角色卡专用信息 |
+| 事件卡定义 | `EventDefinition` | `EventDefinition` | 已实现 | 具有事件卡专用信息 |
+| 高潮卡定义 | `ClimaxDefinition` | `ClimaxDefinition` | 已实现 | — |
+| 任意卡片定义 | `CardDefinition` | `AnyCardDefinition` 已移除 | 已完成 | 不再需要额外兼容别名 |
 
-命名目标是：
+命名目标：
 
-> `CardDefinition` 表示“卡片定义”这一总概念；具体卡片种类拥有各自适用的 Card Information，不应通过给不适用的字段填入 `0`、`None` 或空值来强行统一结构。
+> `CardDefinition` 表示“卡片定义”这一总概念；具体卡片种类拥有各自适用的 Card Information，不通过给不适用字段填入 `0`、`None` 或空值强行统一结构。
 
 ### 2.1.2 卡片实例
 
@@ -156,20 +133,18 @@ definition: CardDefinition
 
 即使两张卡引用同一个 `CardDefinition`，它们仍然是两个不同的 `Card`，可以独立存在于不同区域，并具有不同的运行时状态。
 
-当前代码：
+当前方向：
 
 ```python
 @dataclass(frozen=True)
 class Card:
     instance_id: str
     number: int
-    definition: AnyCardDefinition
+    definition: CardDefinition
     face_up: bool = True
 ```
 
-当前 `Card` 这一名称本身没有歧义，可以继续作为卡片实例的规范类型名。
-
-Card 实例还需要能够确定其官方规则意义上的 `Owner`。
+Card 实例还需要能够确定官方规则意义上的 `Owner`。
 
 规范字段：
 
@@ -192,11 +167,11 @@ Ability 与 Effect 的 Master 留到能力与效果章节按官方规则分别�
 
 | 中文概念 | 规范程序名称 | 当前程序名称 | 状态 | 备注 |
 | --- | --- | --- | --- | --- |
-| 卡片实例 | `Card` | `Card` | 已确认 | 表示本局实际存在的一张卡 |
-| 引用的卡片定义 | `definition` | `definition` | 已确认 | 指向该卡对应的卡片定义 |
-| 卡片稳定标识 | `card_id` | `instance_id` | 待检查 | 是否迁移留到基础设施整理时决定 |
-| 卡片所有者 | `owner_id` | 尚未实现 | 待实现 | 本局固定 Owner，不因 Zone、Master 或 Player Control 改变 |
-| 调试副本编号 | 待检查 | `number` | 待检查 | 项目调试信息，不属于官方卡片信息 |
+| 卡片实例 | `Card` | `Card` | 已确认 | 本局实际存在的一张卡 |
+| 引用的卡片定义 | `definition` | `definition` | 已实现 | 指向 `CardDefinition` |
+| 卡片稳定标识 | `card_id` | `instance_id` | 待检查 | 是否迁移留到基础设施整理 |
+| 卡片所有者 | `owner_id` | 尚未实现 | 待实现 | 本局固定 Owner |
+| 调试副本编号 | 待检查 | `number` | 待检查 | 不属于官方 Card Information |
 | 卡片正反面状态 | `face_state` | `face_up` | 待迁移 | 使用 `CardFaceState` 明确表达 |
 
 ---
@@ -208,6 +183,8 @@ Ability 与 Effect 的 Master 留到能力与效果章节按官方规则分别�
 官方规则使用 Type 表示卡片种类。
 
 WS 有三种基本卡片种类：
+
+
 
 1. Character
 2. Event
@@ -223,39 +200,22 @@ CardType.EVENT
 CardType.CLIMAX
 ```
 
-当前代码主要使用：
-
-```python
-kind == "character"
-kind == "climax"
-```
-
-卡片 JSON 也使用：
+当前代码与 Card JSON 已统一使用 `card_type`。JSON 中的字符串值由 Loader 转换为 `CardType`；构造完成后，Definition 对象的 `card_type` 由具体 Definition 类型固定。
 
 ```json
 {
-    "kind": "character"
+    "card_type": "character"
 }
 ```
 
-因此：
-
 | 中文概念 | 规范程序名称 | 当前程序名称 | UI 名称 | 状态 |
 | --- | --- | --- | --- | --- |
-| 卡片种类字段 | `card_type` | `kind` | 卡片种类 | 待迁移 |
-| 角色卡 | `CardType.CHARACTER` | `"character"` | 角色卡 | 待迁移 |
-| 事件卡 | `CardType.EVENT` | 尚未完整实现 | 事件卡 | 待实现 |
-| 高潮卡 | `CardType.CLIMAX` | `"climax"` | 高潮卡 | 待迁移 |
+| 卡片种类字段 | `card_type` | `card_type` | 卡片种类 | 已实现 |
+| 角色卡 | `CardType.CHARACTER` | `CardType.CHARACTER` | 角色卡 | 已实现 |
+| 事件卡 | `CardType.EVENT` | `CardType.EVENT` | 事件卡 | 已实现 |
+| 高潮卡 | `CardType.CLIMAX` | `CardType.CLIMAX` | 高潮卡 | 已实现 |
 
-这里的 `Event` 专门表示官方事件卡种类。
-
-模拟器内部“已经发生的游戏事件”使用：
-
-```python
-GameEvent
-```
-
-不得使用裸 `Event` 与事件卡概念混淆。
+模拟器内部“已经发生的游戏事件”使用 `GameEvent`，不得使用裸 `Event` 与事件卡概念混淆。
 
 ---
 
@@ -267,36 +227,28 @@ GameEvent
 
 | 中文概念 | 官方名称 | 规范字段名 | 当前字段名 | 状态 | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| 卡名 | Card Name | `name` | `name` | 已确认 | — |
-| 卡片种类 | Type | `card_type` | `kind` | 待迁移 | 使用 `CardType`，由具体 Definition 类型固定 |
-| 颜色 | Color | `color: CardColor` | `color: str` | 待迁移 | 当前支持黄、绿、红、蓝 |
-| 特征 | Trait | `traits` | `traits` | 已确认 | 一张 Character 可以有多个特征 |
-| 等级 | Level | `level` | `level` | 已确认 | Character / Event |
-| 费用 | Cost | `cost` | `cost` | 已确认 | Character / Event |
-| 图标 | Icon | `card_icons` | 尚未实现 | 待实现 | `CardIcon.COUNTER` / `CardIcon.CLOCK` |
-| 力量 | Power | `power` | `power` | 已确认 | 仅 Character |
-| 灵魂 | Soul | `soul` | `soul` | 已确认 | 仅 Character |
-| 触发图标 | Trigger Icon | `trigger_icons` | `trigger_marks` | 待迁移 | 可为空、单个、复数或重复 |
+| 卡名 | Card Name | `name` | `name` | 已实现 | — |
+| 卡片种类 | Type | `card_type` | `card_type` | 已实现 | 使用 `CardType` |
+| 颜色 | Color | `color: CardColor` | `color: CardColor` | 已实现 | 当前黄、绿、红、蓝 |
+| 特征 | Trait | `traits` | `traits` | 已实现 | Character 可有多个 |
+| 等级 | Level | `level` | `level` | 已实现 | Character / Event |
+| 费用 | Cost | `cost` | `cost` | 已实现 | Character / Event |
+| 图标 | Icon | `card_icons` | `card_icons` | 已实现 | Counter / Clock |
+| 力量 | Power | `power` | `power` | 已实现 | 仅 Character |
+| 灵魂 | Soul | `soul` | `soul` | 已实现 | 仅 Character |
+| 触发图标 | Trigger Icon | `trigger_icons` | `trigger_icons` | 已实现 | 可为空、单个、复数或重复 |
 | 卡片文本 | Card Text | 由结构化 Ability / Effect 渲染 | 尚未实现 | 待后续实现 | 不作为独立手写规则真相 |
-| 卡片编号 | Card Number | `card_number` | `code` | 待迁移 | 保存完整 Card Number |
+| 卡片编号 | Card Number | `card_number` | `card_number` | 已实现 | 保存完整 Card Number |
 
 ### 2.3.1 特征
 
-官方规则概念使用 Trait。
-
-程序字段使用：
+官方规则概念使用 Trait。程序字段使用复数：
 
 ```python
 traits
 ```
 
-而不是：
-
-```python
-trait
-```
-
-因为一张卡可以同时具有多个特征。
+因为一张 Character 可以同时具有多个特征。
 
 因此：
 
@@ -308,8 +260,6 @@ UI 名称：特征
 
 ### 2.3.2 各卡片种类拥有的信息
 
-不同 `CardType` 并不拥有完全相同的 Card Information。
-
 程序模型必须区分：
 
 ```text
@@ -320,16 +270,6 @@ UI 名称：特征
 
 ```text
 该 Card Information 存在，但内容为空或数值为 0
-```
-
-例如：
-
-```text
-Character.power = 0
-→ Character 具有 Power，基础值为 0
-
-Climax
-→ 根本没有 Power 这一 Card Information
 ```
 
 当前规范：
@@ -348,7 +288,17 @@ Climax
 | `soul` | ✓ | — | — |
 | `trigger_icons` | ✓ | ✓ | ✓ |
 
-其中“✓”表示该 Card Type 具有这一类 Card Information，并不表示其内容必须非空。
+“✓”表示该 Card Type 具有这一类 Card Information，并不表示其内容必须非空。
+
+例如：
+
+```text
+Character.power = 0
+→ Character 具有 Power，基础值为 0
+
+Climax
+→ 根本没有 Power 这一 Card Information
+```
 
 因此：
 
@@ -374,23 +324,13 @@ ClimaxDefinition
 definition.trigger_icons == ()
 ```
 
-表示三种 Card Type 都具有 Trigger Icon 这一 Card Information，但该卡基础定义中没有任何 Trigger Icon。
+表示该卡具有 Trigger Icon Information，但基础定义中当前数量为 0。
 
 具体定义结构不得为了统一字段而给不具有某项 Card Information 的 Card Type 填入虚假的 `0`、`None`、空 tuple 或其他默认规则值。
 
-
 ### 2.3.3 图标与触发图标
 
-普通 Icon 与 Trigger Icon 是两类不同的 Card Information，应在程序中保持独立。
-
-官方规则中的普通 Icon 目前需要支持：
-
-```text
-Counter Icon
-Clock Icon
-```
-
-项目程序类型使用：
+普通 Icon 与 Trigger Icon 是两类不同的 Card Information。
 
 ```python
 class CardIcon(Enum):
@@ -398,16 +338,10 @@ class CardIcon(Enum):
     CLOCK = "clock"
 ```
 
-字段统一使用：
+字段：
 
 ```python
 card_icons: tuple[CardIcon, ...]
-```
-
-而不是较模糊的：
-
-```python
-icons
 ```
 
 `card_icons` 可以为空、单个或复数：
@@ -430,13 +364,13 @@ class TriggerIcon(Enum):
     ...
 ```
 
-对应字段：
+字段：
 
 ```python
 trigger_icons: tuple[TriggerIcon, ...]
 ```
 
-`trigger_icons` 可以为空、单个、复数，也允许保存重复 Trigger Icon：
+允许：
 
 ```python
 ()
@@ -445,28 +379,7 @@ trigger_icons: tuple[TriggerIcon, ...]
 (TriggerIcon.SOUL, TriggerIcon.SOUL)
 ```
 
-因此：
-
-- 不使用 `set`；
-- 不自动去重；
-- 不使用 `TriggerIcon.NONE` 表示无 Trigger Icon；
-- 空 tuple 表示“具有 Trigger Icon 这一 Card Information，但基础定义中当前数量为 0”。
-
-三种 Card Type 均具有 Trigger Icon 这一 Card Information，因此 `trigger_icons` 属于公共 `CardDefinition`。
-
-当前代码使用：
-
-```python
-trigger_marks
-```
-
-后续应迁移为：
-
-```python
-trigger_icons
-```
-
-#### 基础 Trigger Icons 与 Current Trigger Icons
+因此不使用 `set`、不自动去重、不使用 `TriggerIcon.NONE` 表示无 Trigger Icon。当前代码已经统一使用 `trigger_icons`。
 
 `CardDefinition.trigger_icons` 表示基础 / 印刷 Trigger Icons。
 
@@ -502,17 +415,7 @@ Trigger Check Icon Snapshot
 
 ### 2.3.4 卡片文本
 
-Card Text 是供玩家阅读的自然语言规则文本。
-
-本项目不把手写：
-
-```python
-card_text: str
-```
-
-作为规则逻辑的独立真相来源。
-
-规则真相原则上来自结构化 Ability / Effect 定义：
+本项目不把手写 `card_text: str` 作为规则逻辑的独立真相来源。
 
 ```text
 Structured Ability / Effect Definition
@@ -521,7 +424,7 @@ Structured Ability / Effect Definition
         │     → 执行规则
         │
         └──→ Card Text Renderer
-              → 生成供玩家阅读的 Card Text
+              → 生成人类可读 Card Text
 ```
 
 例如一项概念上的结构：
@@ -569,13 +472,7 @@ Effect
 
 ### 2.3.5 卡片编号
 
-官方英文名称为：
-
-```text
-Card Number
-```
-
-规范字段：
+官方英文名称为 Card Number。
 
 ```python
 card_number: str
@@ -590,17 +487,7 @@ T-002
 T-003
 ```
 
-当前代码 / JSON 中的：
-
-```python
-code
-```
-
-后续迁移为：
-
-```python
-card_number
-```
+当前代码与 JSON 已统一使用 `card_number`。
 
 `Card Number` 与 `Title Code` 是不同概念，不应混用。
 
@@ -615,7 +502,6 @@ CardDefinition.card_number
 Card 的稳定实例标识
 → 回答“这是本局中的哪一张具体卡？”
 ```
-
 
 ---
 
@@ -1028,7 +914,192 @@ Card.card_id = "P1-T001-03"
 
 ---
 
-## 2.9 第 2 章测试规范
+## 2.9 Card JSON 与严格 Loader
+
+Card JSON 是 `CardDefinition` 的结构化输入格式。当前 Loader 使用严格 Schema：
+
+> 一份 JSON 必须完整且仅包含其 `CardType` 当前定义的 Card Information。
+
+不允许通过忽略未知字段、自动补缺失字段或容忍重复 key 的方式进入规则对象。
+
+### 2.9.1 加载职责边界
+
+当前职责分为：
+
+```text
+card_definition.py
+→ 定义 CardDefinition / Enum 等规则数据模型
+→ 不知道 JSON
+
+card_value_rules.py
+→ 验证单个 Card Information 的值
+→ 将合法原始值规范化为 Python 规则值
+
+card_loader.py
+→ 解析 JSON
+→ 验证结构
+→ 调用 value validator
+→ 构造具体 CardDefinition
+```
+
+Loader 流程：
+
+```text
+原始 JSON
+↓
+解析并检测重复 key
+↓
+读取 card_type
+↓
+验证 card_type 并选择精确 Schema
+↓
+比较实际字段与应有字段
+├─ missing fields
+└─ unexpected fields
+↓
+逐字段验证 / 规范化
+↓
+构造 CharacterDefinition / EventDefinition / ClimaxDefinition
+```
+
+`card_type` 是特殊公共 Card Information：它存在于三种 Card Type 的 JSON 中，同时承担 Loader 的 Schema discriminator。
+
+### 2.9.2 精确字段集合
+
+公共字段：
+
+```text
+card_type
+card_number
+name
+color
+trigger_icons
+```
+
+Character 专属字段：
+
+```text
+level
+cost
+power
+soul
+traits
+card_icons
+```
+
+Event 专属字段：
+
+```text
+level
+cost
+card_icons
+```
+
+Climax 不增加专属字段。
+
+采用“有且仅有”原则：
+
+- 应有字段缺失 → 非法；
+- 不属于该 Card Type 的字段出现 → 非法；
+- 同一 JSON object 中同名 key 重复定义 → 非法；
+- 字段存在但值为空，与字段不存在是两种不同状态。
+
+例如：
+
+```json
+"trigger_icons": []
+```
+
+表示具有 Trigger Icon Information，但当前基础值为空；不得通过省略 `trigger_icons` 表达同一含义。
+
+JSON object 的字段排列顺序没有规则意义。Loader 按字段名读取并以字段集合验证 Schema，因此公共字段与专属字段可以互换或穿插排列。
+
+JSON array / list 内部顺序则保留。例如：
+
+```json
+"trigger_icons": ["soul", "shot", "soul"]
+```
+
+必须保持顺序与重复项，不自动排序或去重。
+
+### 2.9.3 重复 key
+
+普通 `json.loads()` 最终形成普通 `dict` 时可能丢失重复 key 信息，因此 Loader 使用 `object_pairs_hook`，在最终普通 `dict` 形成前检查重复字段。
+
+重复字段必须明确失败，不允许后值静默覆盖前值。
+
+这一原则同样适用于未来嵌套在 Card JSON 中的 JSON object。
+
+### 2.9.4 值验证与规范化
+
+字段集合正确后，再验证每个字段内部的值。
+
+`card_value_rules.py` 中 validator 的统一约定：
+
+```python
+validated_value = validate_xxx(raw_value)
+```
+
+即合法时返回规范化后的 Python 值，例如：
+
+```text
+"yellow"
+→ CardColor.YELLOW
+
+["soul", "shot"]
+→ (TriggerIcon.SOUL, TriggerIcon.SHOT)
+```
+
+当前已经确认的数据类型与 Enum 合法值立即验证。
+
+对于 `level`、`cost`、`power`、`soul` 等尚未确认完整合法数值范围的字段，当前只验证已经确定的类型要求，并保留进一步规则接口 / TODO；不得擅自设定尚未确认的规则范围。
+
+### 2.9.5 加载错误
+
+当前加载错误边界：
+
+```text
+CardLoadError
+├─ CardJsonSyntaxError
+├─ DuplicateCardFieldError
+├─ CardSchemaError
+└─ InvalidCardValueError
+```
+
+`card_value_rules.py` 内部使用 `CardValueError` 表示单字段验证失败；Loader 捕获后转换为 `InvalidCardValueError`。
+
+错误报告应尽量精确，包括：
+
+- JSON 语法错误的位置；
+- 重复了哪些字段；
+- 缺失了哪些字段；
+- 出现了哪些未定义字段；
+- 哪一个具体字段的类型或值不合法；
+- 可取得时包含文件路径与 `card_number`。
+
+当 missing 与 unexpected 同时存在时，应在同一次 `CardSchemaError` 中同时报告。
+
+### 2.9.6 Schema 演进原则
+
+当前严格 Schema 表示“当前版本允许什么”，并不表示 Card JSON 永久不能扩展。
+
+以后 Ability / Effect 或其他已经确认的 Card Information 需要进入 Card JSON 时，正确流程是：
+
+```text
+先更新规范
+↓
+明确新的 JSON Schema
+↓
+更新 Loader / value rules
+↓
+更新对应测试
+```
+
+不得为了未来扩展而把当前 Loader 改成“接受任意未知字段”。未知字段在当前 Schema 下仍应明确失败。
+
+---
+
+## 2.10 第 2 章测试规范
 
 卡片系统建立与本章对应的独立测试目录。
 
@@ -1049,12 +1120,12 @@ tests/
 
 现有测试可以继续保留作为旧回归测试，不要求一次性迁移或删除。
 
-### 2.9.1 测试卡数据来源
+### 2.10.1 测试卡数据来源
 
 以后自动化测试使用的卡片 fixture / card data 只从：
 
 ```text
-card/TEST/
+cards/TEST/
 ```
 
 读取。
@@ -1064,19 +1135,14 @@ card/TEST/
 当前测试卡：
 
 ```text
-T-001
-→ Character
-
-T-002
-→ Climax
-
-T-003
-→ Event
+T-001 → Character
+T-002 → Climax
+T-003 → Event
 ```
 
 `T-003` 只用于卡片系统测试，暂时不加入现有卡组测试。
 
-### 2.9.2 第一批 Card Definition 测试
+### 2.10.2 第一批 Card Definition 测试
 
 第一批优先建立：
 
@@ -1093,7 +1159,7 @@ test_card_loader.py
 
 ```text
 CardDefinition
-→ 是三种具体 Definition 的共同基类
+→ 三种具体 Definition 的共同基类
 
 CharacterDefinition
 → 具有 Character 专属 Card Information
@@ -1132,19 +1198,32 @@ card_icons
 
 CardColor
 → 当前只接受已定义规则颜色
-
-Loader
-→ 未知 card_type / color / icon 等非法输入明确失败
-→ 不静默接受或忽略不属于该 Card Type 的 Card Information
 ```
 
-### 2.9.3 测试与规范的关系
+Loader 测试还应覆盖：
 
-以后修改某一规范章节时，应同时检查：
+```text
+重复 JSON key
+→ 明确失败
 
-> 该规则是否需要对应的自动化测试？
+missing + unexpected
+→ 可在同一次 Schema Error 中精确报告
 
-目标关系：
+未知 card_type / color / icon
+→ 明确失败
+
+字段类型错误
+→ 精确指出字段
+
+JSON object 字段顺序
+→ 不影响合法性
+
+trigger_icons / card_icons
+→ 保持内部顺序
+→ trigger_icons 允许重复
+```
+
+### 2.10.3 测试与规范的关系
 
 ```text
 docs/02_cards.md
@@ -1154,31 +1233,35 @@ Card 实现
 tests/test_02_cards/
 ```
 
+以后修改某一规范章节时，应同时检查：
+
+> 该规则是否需要对应的自动化测试？
+
 测试作为规范的可执行验证，但不替代规范文档本身。
 
 ---
 
-## 2.10 当前命名审计摘要
+## 2.11 当前命名审计摘要
 
 | 当前名称 | 规范名称 | 类别 | 状态 | 原因 |
 | --- | --- | --- | --- | --- |
-| `kind` | `card_type` | `CardType` | 待迁移 | 使用明确类别名 |
-| `"character"` | `CardType.CHARACTER` | `CardType` | 待迁移 | 避免规则层裸字符串 |
-| `"climax"` | `CardType.CLIMAX` | `CardType` | 待迁移 | 与高潮区、高潮阶段消歧 |
-| `trigger_marks` | `trigger_icons` | `TriggerIcon` | 待迁移 | 使用官方 Trigger Icon 概念 |
-| `icons` | `card_icons` | `CardIcon` | 待迁移 / 待实现 | 与 Trigger Icon 明确区分 |
-| `color: str` | `color: CardColor` | Card Information | 待迁移 | 使用可维护规则 Enum |
-| `code` | `card_number` | Card Information | 待迁移 | 官方名称为 Card Number |
+| `card_type` | `card_type` | `CardType` | 已实现 | JSON 中兼作 Loader discriminator |
+| `CardType.CHARACTER` | `CardType.CHARACTER` | `CardType` | 已实现 | 规则层不再依赖裸字符串判断 |
+| `CardType.EVENT` | `CardType.EVENT` | `CardType` | 已实现 | Event Card 类型已进入统一模型 |
+| `CardType.CLIMAX` | `CardType.CLIMAX` | `CardType` | 已实现 | 与高潮区、阶段概念消歧 |
+| `trigger_icons` | `trigger_icons` | `TriggerIcon` | 已实现 | 官方 Trigger Icon 概念 |
+| `card_icons` | `card_icons` | `CardIcon` | 已实现 | 与 Trigger Icon 明确区分 |
+| `color: CardColor` | `color: CardColor` | Card Information | 已实现 | 可维护规则 Enum |
+| `card_number` | `card_number` | Card Information | 已实现 | 官方名称 Card Number |
+| `CardDefinition` | `CardDefinition` | 卡片定义 | 已实现 | 三种具体 Definition 的共同基类 |
+| `AnyCardDefinition` 已移除 | `CardDefinition` | 卡片定义 | 已完成 | 不再需要额外兼容别名 |
 | `instance_id` | `card_id` | 稳定标识 | 待检查 | Replay 影响较大 |
 | `number` | 待检查 | 项目调试信息 | 待检查 | 不属于官方 Card Information |
 | `face_up` | `face_state` | `CardFaceState` | 待迁移 | 明确表达正反面状态 |
-| `CardDefinition = CharacterDefinition` | 正式 `CardDefinition` 基类 | 卡片定义 | 待迁移 | 当前兼容别名不能代表全部卡片种类 |
-| `AnyCardDefinition` | `CardDefinition` | 卡片定义 | 待迁移 | 公共基类建立后原则上不再需要 |
-
 
 ---
 
-## 2.11 本节暂不决定的内容
+## 2.12 本节暂不决定的内容
 
 以下内容暂不提前锁死：
 
@@ -1194,17 +1277,15 @@ tests/test_02_cards/
 10. 完整卡片数据库中的非核心规则字段。
 11. Card Master 的最终查询接口，以及是否需要在特定规则处理中保存 Master 快照。
 12. Card runtime state 的最终存储位置与结构。
-
+13. Ability / Effect 加入 Card JSON 后的内部 Schema；该扩展必须通过明确的 Schema 演进完成，而不是开放任意顶层字段。
 
 ---
 
-## 2.12 本节命名结论
+## 2.13 本节命名结论
 
-当前确定的规范方向：
+当前已经实现并确定：
 
 ```python
-Card
-
 CardDefinition
 CharacterDefinition
 EventDefinition
@@ -1235,17 +1316,73 @@ card_icons
 power
 soul
 trigger_icons
+```
 
+当前已经实现严格 Card JSON / Loader 边界：
+
+```text
+card_type
+→ Schema discriminator
+
+Card JSON
+→ 每种 CardType 使用精确字段集合
+→ missing / unexpected / duplicate 明确失败
+→ object 字段顺序无规则意义
+→ list 内部顺序保留
+
+card_value_rules.py
+→ 单字段验证与规范化
+
+card_loader.py
+→ JSON / Schema / 加载职责
+
+card_definition.py
+→ 不知道 JSON
+```
+
+仍属于已确定规范、待后续实现或迁移：
+
+```python
 CardOrientation.STAND
 CardOrientation.REST
 CardOrientation.REVERSE
-orientation          # 规范字段语义，存储位置待实现时决定
+orientation
 
 CardFaceState.FACE_UP
 CardFaceState.FACE_DOWN
-face_state           # 规范字段语义，存储位置待实现时决定
+face_state
 
-owner_id             # Card 的固定 Owner；具体存储位置待实现时决定
+owner_id
+```
+
+以下名称仍保持待检查：
+
+```python
+card_id
+instance_id
+number
+```
+
+当前已经实现严格 Card JSON / Loader 边界：
+
+```text
+card_type
+→ 作为 Loader 的 Schema discriminator
+
+Card JSON
+→ 每种 CardType 使用精确字段集合
+→ missing / unexpected / duplicate 明确失败
+→ JSON object 字段顺序无规则意义
+→ JSON array 内部顺序与重复项保留
+
+card_value_rules.py
+→ 单字段验证与规范化
+
+card_loader.py
+→ JSON 解析、Schema 验证与 Definition 构造
+
+card_definition.py
+→ 不知道 JSON
 ```
 
 并明确：
@@ -1266,14 +1403,6 @@ Query System
 Card Text
 → 原则上由结构化 Ability / Effect 数据渲染生成
 → 不作为独立手写的规则真相来源
-```
-
-以下名称仍保持待检查：
-
-```python
-card_id
-instance_id
-number
 ```
 
 信息公开范围以及各区域默认的正反面规则，留到场地区域章节统一定义。
