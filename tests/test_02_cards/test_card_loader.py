@@ -1,5 +1,6 @@
 import unittest
-from cards import CardType, load_card
+from card_definition import CardType
+from card_loader import load_card
 
 class CardLoaderTests(unittest.TestCase):
     def test_test_folder_covers_all_three_card_types(self):

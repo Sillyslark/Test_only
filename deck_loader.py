@@ -3,7 +3,8 @@
 from pathlib import Path
 import json
 
-from cards import Card, ClimaxDefinition, load_card
+from card_definition import Card, ClimaxDefinition
+from card_loader import load_card
 
 
 ROOT = Path(__file__).resolve().parent

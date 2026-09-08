@@ -1,5 +1,6 @@
 import unittest
-from cards import CardColor, load_card
+from card_definition import CardColor
+from card_loader import load_card
 
 class CardColorTests(unittest.TestCase):
     def test_test_cards_load_typed_color(self):

@@ -3,10 +3,12 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from cards import (
+from card_definition import (
     CardDefinition,
     CharacterDefinition,
     ClimaxDefinition,
+)
+from card_loader import (
     load_card,
 )
 

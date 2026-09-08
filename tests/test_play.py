@@ -4,11 +4,12 @@ import json
 import unittest
 from tests.helpers import at_main
 from actions import AdvancePhaseAction, PlayCardAction
-from cards import CardDefinition, load_card
+from card_definition import CardDefinition
+from card_loader import load_card
 from engine import Session, Zone, other
 from rule_resolution import STAGE_SLOTS, resolve_stage_overlaps
 from tests.helpers import opened
-from cards import load_card
+from card_loader import load_card
 
 TEST_CARD = load_card("TEST/T-001.json")
 

@@ -5,7 +5,8 @@ from deck_loader import DEFAULT_TEST_DECK
 from engine import Session, state_hash
 from zones import Zone
 
-from cards import Card, load_card
+from card_definition import Card
+from card_loader import load_card
 
 from match_result import MatchResult
 

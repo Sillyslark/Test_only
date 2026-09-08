@@ -2,7 +2,7 @@ import json
 import unittest
 
 from actions import AdvancePhaseAction, MulliganAction
-from cards import ClimaxDefinition
+from card_definition import ClimaxDefinition
 from deck_loader import DEFAULT_TEST_DECK
 from engine import Session
 

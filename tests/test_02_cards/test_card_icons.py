@@ -1,5 +1,6 @@
 import unittest
-from cards import CardIcon, load_card
+from card_definition import CardIcon
+from card_loader import load_card
 
 class CardIconTests(unittest.TestCase):
     def test_character_and_event_have_empty_card_icons_in_test_data(self):

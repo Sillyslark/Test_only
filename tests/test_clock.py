@@ -3,7 +3,8 @@ import json
 import unittest
 from tests.helpers import at_clock
 from actions import AdvancePhaseAction, ClockAction
-from cards import Card, load_card
+from card_definition import Card
+from card_loader import load_card
 from engine import Session, other, state_hash
 from tests.helpers import opened
 

@@ -15,7 +15,7 @@ from actions import (
     SwapStageSlotsAction,
 )
 from phases import PHASES
-from cards import Card, ClimaxDefinition
+from card_definition import Card, ClimaxDefinition
 from deck_loader import build_deck, resolve_deck_path, DEFAULT_TEST_DECK
 from rule_resolution import (
     STAGE_SLOTS,

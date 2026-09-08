@@ -1,5 +1,6 @@
 import unittest
-from cards import CardDefinition, CharacterDefinition, EventDefinition, ClimaxDefinition, load_card
+from card_definition import CardDefinition, CharacterDefinition, EventDefinition, ClimaxDefinition
+from card_loader import load_card
 
 class CardDefinitionTests(unittest.TestCase):
     def test_three_test_cards_use_common_base(self):

@@ -1,5 +1,5 @@
 import unittest
-from cards import load_card
+from card_loader import load_card
 
 class CardInformationBoundaryTests(unittest.TestCase):
     def test_character_fields(self):

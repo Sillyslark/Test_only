@@ -1,6 +1,7 @@
 import unittest
 from dataclasses import FrozenInstanceError
-from cards import TriggerIcon, load_card
+from card_definition import TriggerIcon
+from card_loader import load_card
 
 class TriggerIconTests(unittest.TestCase):
     def test_test_cards_can_have_empty_trigger_icons(self):
