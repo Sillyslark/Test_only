@@ -21,8 +21,9 @@
 | 卡片 | 卡片种类 | Type | `CardType` | 区分角色卡、事件卡和高潮卡 |
 | 卡片 | 卡片状态 | State | `CardState` | 表示 Stand、Rest、Reverse 等状态 |
 | 玩家 | 玩家 | Player | `Player` / `PlayerState` | 表示玩家及其当前游戏状态 |
-| 玩家 | 所有者 | Owner | `owner` / `owner_id` | 表示卡片等对象的所有者 |
-| 玩家 | 控制者 | Controller | `controller` / `controller_id` | 表示卡片、能力等对象当前的控制者 |
+| 玩家 | 所有者 | Owner | `owner` / `owner_id` | 表示 Card 的固定拥有者；由游戏开始时该 Card 属于哪名 Player 的 Deck 决定 |
+| 玩家 | 主控方 | Master | `master` / `master_id` | 表示 Card、Ability、Effect 等对象按官方规则确定的当前 Master |
+| 玩家 | 玩家控制关系 | 项目概念 | `PlayerControl`（候选） | 表示特殊效果使一名 Player 代替另一名 Player 作出游戏决定 |
 | 场地 | 区域 | Zone | `Zone` | 表示卡组、手牌、控制室、高潮区等规则区域 |
 | 场地 | 舞台位置 | Stage Position | `StagePosition` | 表示五个舞台位置 |
 | 游戏流程 | 阶段 | Phase | `Phase` | 表示回合中的主要阶段 |
@@ -47,7 +48,7 @@
 
 ### 1.2 官方概念与项目概念
 
-官方概念来自 WS 官方规则，例如 Type、Zone、Stage Position、Phase、Step、Ability、Effect、Rule Action 等。对于这些概念，原则上优先使用官方术语。
+官方概念来自 WS 官方规则，例如 Type、Zone、Stage Position、Phase、Step、Ability、Effect、Rule Action、Owner、Master 等。对于这些概念，原则上优先使用官方术语。
 
 项目概念是为了实现模拟器而建立的软件抽象，例如 `Card`、`GameState`、`Action`、`Continuation`、`GameEvent`、`Replay` 等。项目概念不要求在官方规则中存在同名术语，但必须保持明确，并避免与官方术语冲突。
 
@@ -182,3 +183,47 @@ LegalAction / Options
 具体术语表再记录中文概念、官方英文名称、所属类别、规范程序名称、当前程序名称、UI 名称、状态和备注。
 
 本节只负责建立分类体系与命名原则；具体迁移在后续章节逐项确定。
+
+### 1.10 Owner、Master 与 Player Control
+
+必须区分以下三个概念：
+
+```text
+Owner
+→ Card 的固定拥有者
+
+Master
+→ Card、Ability、Effect 等对象按官方规则确定的当前主控方
+
+Player Control
+→ 模拟器为特殊效果建立的项目概念：谁实际代替某名 Player 作出游戏决定
+```
+
+对 `Card` 而言，`Owner` 由游戏开始时该 Card 属于哪名 Player 的 Deck 决定，并在该局中保持不变。
+
+`Master` 与 `Owner` 不是同义词。Card 的 Master 通常依据其当前所在 Zone 的 Master 确定，因此 Card 进入另一名 Player 的 Zone 后，Owner 可以保持不变，而 Master 按规则改变。
+
+不得使用项目自造的 `Controller` 代替官方 `Master`。
+
+`Player Control` 也不得与 `Master` 合并。例如特殊效果使 P1 在 P2 的一个 Turn 中控制 P2 时：
+
+```text
+Turn Player
+→ 仍然是 P2
+
+P2 的 Turn Count
+→ 正常增加
+
+P2 的 Zone
+→ 仍然属于 P2
+
+Card Owner / Master
+→ 仍按各自规则判断
+
+实际替 P2 作出游戏决定的 Player
+→ P1
+```
+
+因此 Player Control 描述的是“谁代替某名 Player 提供决定”，而不是改变被控制 Player 的规则身份或其 Card 的 Owner / Master。
+
+`PlayerControl`、`decision_maker` 等具体程序结构暂不在第一节锁定。

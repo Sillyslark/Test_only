@@ -439,6 +439,39 @@ P2 + CENTER_LEFT
 + StagePosition（该区域需要时）
 ```
 
+这里的“所属玩家”也是后续确定 Zone Master 的必要信息。
+
+对于属于某名 Player 的 Zone，应能够由具体 Zone 引用确定其官方规则意义上的 `Master`。位于该 Zone 中的 Card，再按官方规则由 Zone Master 确定 Card Master。
+
+因此：
+
+```text
+Card Owner
+→ 不因 Card 进入另一名 Player 的 Zone 而改变
+
+Card direct zone
+→ 指向某名 Player 的具体 Zone
+
+Zone Master
+→ 由该具体 Zone 的规则归属确定
+
+Card Master
+→ 按当前 direct zone 的 Zone Master 确定
+```
+
+例如：
+
+```text
+P1 拥有的 Card
+→ 进入 P2 的某个 Zone
+
+Owner
+→ 仍然是 P1
+
+Master
+→ 按该 Zone 的 Master 规则确定，可成为 P2
+```
+
 具体类型结构本节暂不决定。
 
 Marker Area 是独立 Zone。
@@ -921,6 +954,7 @@ Zone.CLIMAX_AREA
 9. Replay 中区域和 StagePosition 的迁移方案。
 10. Zone 与 StagePosition 最终枚举的数据结构。
 11. `direct zone` 在运行时最终使用何种统一引用结构表示。
+12. Zone Master 的最终查询接口，以及 Card Master 是否完全采用动态推导或在特定规则处理中使用快照。
 
 这些内容在相应基础设施或规则系统实现时再决定。
 

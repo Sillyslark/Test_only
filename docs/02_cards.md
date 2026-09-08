@@ -97,11 +97,33 @@ class Card:
 
 当前 `Card` 这一名称本身没有歧义，可以继续作为卡片实例的规范类型名。
 
+Card 实例还需要能够确定其官方规则意义上的 `Owner`。
+
+规范字段：
+
+```python
+owner_id
+```
+
+`owner_id` 表示该 Card 在本局中的固定拥有者。它由游戏开始时该 Card 属于哪名 Player 的 Deck 决定，并在该局中保持不变。
+
+因此，即使某张 P1 拥有的 Card 因规则或效果进入 P2 的 Zone：
+
+```text
+owner_id
+→ 仍然是 P1
+```
+
+Card 的 `Master` 不应被当作另一个固定归属字段与 `owner_id` 等同处理。对于位于 Zone 中的 Card，应依据当前所在 Zone 的 Master 规则确定 Card Master。
+
+Ability 与 Effect 的 Master 留到能力与效果章节按官方规则分别定义。
+
 | 中文概念 | 规范程序名称 | 当前程序名称 | 状态 | 备注 |
 | --- | --- | --- | --- | --- |
 | 卡片实例 | `Card` | `Card` | 已确认 | 表示本局实际存在的一张卡 |
 | 引用的卡片定义 | `definition` | `definition` | 已确认 | 指向该卡对应的卡片定义 |
 | 卡片稳定标识 | `card_id` | `instance_id` | 待检查 | 是否迁移留到基础设施整理时决定 |
+| 卡片所有者 | `owner_id` | 尚未实现 | 待实现 | 本局固定 Owner，不因 Zone、Master 或 Player Control 改变 |
 | 调试副本编号 | 待检查 | `number` | 待检查 | 项目调试信息，不属于官方卡片信息 |
 | 卡片正反面状态 | `face_state` | `face_up` | 待迁移 | 使用 `CardFaceState` 明确表达 |
 
@@ -614,6 +636,7 @@ Card.card_id = "P1-T001-03"
 8. 区域的信息公开规则。
 9. 特殊效果造成的信息公开变化。
 10. 完整卡片数据库中的非核心规则字段。
+11. Card Master 的最终查询接口，以及是否需要在特定规则处理中保存 Master 快照。
 
 ---
 
@@ -655,6 +678,7 @@ orientation          # 规范字段语义，存储位置待实现时决定
 CardFaceState.FACE_UP
 CardFaceState.FACE_DOWN
 face_state           # 规范字段语义，存储位置待实现时决定
+owner_id             # Card 的固定 Owner；具体存储位置待实现时决定
 ```
 
 以下名称保持待检查：
