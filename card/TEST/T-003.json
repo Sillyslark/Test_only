@@ -1,0 +1,10 @@
+{
+  "code": "T-003",
+  "name": "测试事件",
+  "kind": "event",
+  "color": "yellow",
+  "level": 0,
+  "cost": 0,
+  "icons": [],
+  "trigger_marks": []
+}

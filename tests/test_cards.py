@@ -120,7 +120,7 @@ class CardLoadingTests(unittest.TestCase):
         data = {
             "code": "UNKNOWN",
             "name": "unknown",
-            "kind": "event",
+            "kind": "unknown",
             "color": "yellow",
             "trigger_marks": [],
         }

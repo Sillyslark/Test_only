@@ -8,7 +8,7 @@ from cards import CardDefinition, load_card
 from engine import Session, Zone, other
 from rule_resolution import STAGE_SLOTS, resolve_stage_overlaps
 from tests.helpers import opened
-
+from cards import load_card
 
 TEST_CARD = load_card("TEST/T-001.json")
 
@@ -131,7 +131,7 @@ class PlayTests(unittest.TestCase):
             "player",
             "slot",
             "card",
-            "kind",
+            "card_type",
             "cost",
             "level",
         ):
@@ -145,16 +145,29 @@ class PlayTests(unittest.TestCase):
 
             if case == "phase":
                 state.phase = "clock"
+
             elif case == "player":
                 actor = other(actor)
+
             elif case == "slot":
                 slot = "invalid"
+
             elif case == "card":
                 cid = "invalid"
+
+            elif case == "card_type":
+                definition = load_card(
+                    "TEST/T-002.json"
+                )
+                player.hand[0] = replace(
+                    player.hand[0],
+                    definition=definition,
+                )
+
             else:
                 definition = replace(
                     player.hand[0].definition,
-                    **{case: "event" if case == "kind" else 1},
+                    **{case: 1},
                 )
                 player.hand[0] = replace(
                     player.hand[0],
@@ -163,7 +176,10 @@ class PlayTests(unittest.TestCase):
 
             before = deepcopy(session.__dict__)
 
-            with self.subTest(case=case), self.assertRaises(ValueError):
+            with (
+                self.subTest(case=case),
+                self.assertRaises(ValueError),
+            ):
                 session.dispatch(
                     PlayCardAction(
                         actor,
@@ -172,8 +188,10 @@ class PlayTests(unittest.TestCase):
                     )
                 )
 
-            self.assertEqual(before, session.__dict__)
-
+            self.assertEqual(
+                before,
+                session.__dict__,
+            )
 
 if __name__ == "__main__":
     unittest.main()
