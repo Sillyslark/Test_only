@@ -45,95 +45,70 @@ class CardLoadingTests(unittest.TestCase):
     def test_t002_has_no_character_only_fields(self):
         definition = load_card("TEST/T-002.json")
 
-        for field_name in (
-            "level",
-            "cost",
-            "power",
-            "soul",
-            "traits",
-        ):
+        for field_name in ("level", "cost", "power", "soul", "traits"):
             with self.subTest(field=field_name):
                 self.assertFalse(hasattr(definition, field_name))
 
     def test_same_json_loads_to_equal_definition(self):
         a = load_card("TEST/T-001.json")
         b = load_card("TEST/T-001.json")
-
         self.assertEqual(a, b)
         self.assertIsNot(a, b)
 
     def test_same_climax_json_loads_to_equal_definition(self):
         a = load_card("TEST/T-002.json")
         b = load_card("TEST/T-002.json")
-
         self.assertEqual(a, b)
         self.assertIsNot(a, b)
 
     def test_load_card_uses_card_root(self):
-        direct = load_card_definition(
-            CARD_ROOT / "TEST" / "T-001.json"
-        )
+        direct = load_card_definition(CARD_ROOT / "TEST" / "T-001.json")
         relative = load_card("TEST/T-001.json")
-
         self.assertEqual(direct, relative)
 
     def test_missing_required_character_field_is_rejected(self):
         data = {
-            "code": "BROKEN",
+            "card_number": "BROKEN",
             "name": "broken",
-            "kind": "character",
+            "card_type": "character",
             "color": "yellow",
             "level": 0,
             "cost": 0,
             "power": 500,
             "traits": [],
-            "trigger_marks": [],
+            "trigger_icons": [],
+            "card_icons": [],
         }
-
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "broken.json"
-            path.write_text(
-                json.dumps(data, ensure_ascii=False),
-                encoding="utf-8",
-            )
-
+            path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
             with self.assertRaises(KeyError):
                 load_card_definition(path)
 
     def test_missing_required_climax_field_is_rejected(self):
         data = {
-            "code": "BROKEN-CX",
+            "card_number": "BROKEN-CX",
             "name": "broken cx",
-            "kind": "climax",
-            "trigger_marks": [],
+            "card_type": "climax",
+            "trigger_icons": [],
         }
-
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "broken-cx.json"
-            path.write_text(
-                json.dumps(data, ensure_ascii=False),
-                encoding="utf-8",
-            )
-
+            path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
             with self.assertRaises(KeyError):
                 load_card_definition(path)
 
-    def test_unknown_kind_is_rejected(self):
+    def test_unknown_card_type_is_rejected(self):
         data = {
-            "code": "UNKNOWN",
+            "card_number": "UNKNOWN",
             "name": "unknown",
-            "kind": "unknown",
+            "card_type": "unknown",
             "color": "yellow",
-            "trigger_marks": [],
+            "trigger_icons": [],
         }
-
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "unknown.json"
-            path.write_text(
-                json.dumps(data, ensure_ascii=False),
-                encoding="utf-8",
-            )
-
+            path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
             with self.assertRaises(ValueError):
                 load_card_definition(path)
 

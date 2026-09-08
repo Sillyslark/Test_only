@@ -36,22 +36,17 @@ def _tuple_enum(data, key, enum_type):
 
 
 def load_card_definition(path: Path | str) -> CardDefinition:
-    """Load one concrete card definition from JSON.
-
-    The loader currently accepts the repository's legacy JSON keys
-    (code/kind/trigger_marks/icons) while exposing only the new typed model.
-    JSON schema migration is intentionally a separate later step.
-    """
+    """Load one concrete CardDefinition from the current card JSON schema."""
     path = Path(path)
     data = json.loads(path.read_text(encoding="utf-8"))
 
-    card_type = _enum_value(CardType, data["kind"], "card_type")
+    card_type = _enum_value(CardType, data["card_type"], "card_type")
     color = _enum_value(CardColor, data["color"], "color")
     common = dict(
-        card_number=data["code"],
+        card_number=data["card_number"],
         name=data["name"],
         color=color,
-        trigger_icons=_tuple_enum(data, "trigger_marks", TriggerIcon),
+        trigger_icons=_tuple_enum(data, "trigger_icons", TriggerIcon),
     )
 
     if card_type is CardType.CHARACTER:
@@ -62,14 +57,14 @@ def load_card_definition(path: Path | str) -> CardDefinition:
             power=data["power"],
             soul=data["soul"],
             traits=tuple(data.get("traits", [])),
-            card_icons=_tuple_enum(data, "icons", CardIcon),
+            card_icons=_tuple_enum(data, "card_icons", CardIcon),
         )
     if card_type is CardType.EVENT:
         return EventDefinition(
             **common,
             level=data["level"],
             cost=data["cost"],
-            card_icons=_tuple_enum(data, "icons", CardIcon),
+            card_icons=_tuple_enum(data, "card_icons", CardIcon),
         )
     if card_type is CardType.CLIMAX:
         return ClimaxDefinition(**common)
