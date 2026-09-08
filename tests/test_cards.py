@@ -3,6 +3,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from card_loader import CardSchemaError
+
 from card_definition import (
     CardColor,
     CardDefinition,
@@ -81,11 +83,21 @@ class CardLoadingTests(unittest.TestCase):
             "trigger_icons": [],
             "card_icons": [],
         }
+
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "broken.json"
-            path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-            with self.assertRaises(KeyError):
+            path.write_text(
+                json.dumps(data, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(CardSchemaError) as ctx:
                 load_card_definition(path)
+
+            self.assertEqual(
+                ("soul",),
+                ctx.exception.missing_fields,
+            )
 
     def test_missing_required_climax_field_is_rejected(self):
         data = {
@@ -94,11 +106,21 @@ class CardLoadingTests(unittest.TestCase):
             "card_type": "climax",
             "trigger_icons": [],
         }
+
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "broken-cx.json"
-            path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-            with self.assertRaises(KeyError):
+            path.write_text(
+                json.dumps(data, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(CardSchemaError) as ctx:
                 load_card_definition(path)
+
+            self.assertEqual(
+                ("color",),
+                ctx.exception.missing_fields,
+            )
 
     def test_unknown_card_type_is_rejected(self):
         data = {

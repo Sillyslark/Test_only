@@ -5,7 +5,7 @@ information belongs to the query layer and is intentionally not calculated here.
 """
 from dataclasses import dataclass
 from enum import Enum
-from typing import ClassVar, TypeAlias
+from typing import ClassVar
 
 
 class CardType(str, Enum):
@@ -80,10 +80,6 @@ class EventDefinition(CardDefinition):
 @dataclass(frozen=True)
 class ClimaxDefinition(CardDefinition):
     card_type: ClassVar[CardType] = CardType.CLIMAX
-
-
-# Transitional alias only. New code should type against CardDefinition.
-AnyCardDefinition: TypeAlias = CardDefinition
 
 
 @dataclass(frozen=True)
