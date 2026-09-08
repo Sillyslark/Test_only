@@ -1,3 +1,4 @@
+from card_definition import CardType
 import json
 import unittest
 
@@ -60,7 +61,7 @@ class MixedDeckSessionTests(unittest.TestCase):
             self.assertEqual(50, len(cards))
             self.assertEqual(50, len({card.instance_id for card in cards}))
             self.assertEqual(8, sum(
-                card.definition.code == "T-002"
+                card.definition.card_number == "T-002"
                 for card in cards
             ))
 
@@ -87,14 +88,14 @@ class MixedDeckSessionTests(unittest.TestCase):
 
             for player in session.state.players.values():
                 if any(
-                    card.definition.kind == "climax"
+                    card.definition.card_type is CardType.CLIMAX
                     for card in player.hand
                 ):
                     saw_climax_in_opening_hand = True
 
                 if (
                     player.deck
-                    and player.deck[0].definition.kind == "climax"
+                    and player.deck[0].definition.card_type is CardType.CLIMAX
                 ):
                     saw_climax_on_deck_top = True
 
@@ -122,7 +123,7 @@ class MixedDeckSessionTests(unittest.TestCase):
                     (
                         card
                         for card in candidate.state.players["P1"].hand
-                        if card.definition.kind == "climax"
+                        if card.definition.card_type is CardType.CLIMAX
                     ),
                     None,
                 )
@@ -218,11 +219,11 @@ class MixedDeckSessionTests(unittest.TestCase):
 
         self.assertEqual(
             8,
-            sum(card.definition.code == "T-002" for card in p1_cards),
+            sum(card.definition.card_number == "T-002" for card in p1_cards),
         )
         self.assertEqual(
             0,
-            sum(card.definition.code == "T-002" for card in p2_cards),
+            sum(card.definition.card_number == "T-002" for card in p2_cards),
         )
 
 

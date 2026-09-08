@@ -57,19 +57,6 @@ class CardDefinition:
     trigger_icons: tuple[TriggerIcon, ...]
     card_type: ClassVar[CardType]
 
-    # Transitional read-only compatibility for existing code/tests/replays.
-    @property
-    def code(self) -> str:
-        return self.card_number
-
-    @property
-    def kind(self) -> str:
-        return self.card_type.value
-
-    @property
-    def trigger_marks(self) -> tuple[str, ...]:
-        return tuple(icon.value for icon in self.trigger_icons)
-
 
 @dataclass(frozen=True)
 class CharacterDefinition(CardDefinition):

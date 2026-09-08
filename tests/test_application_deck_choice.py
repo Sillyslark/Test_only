@@ -29,7 +29,7 @@ class ApplicationDeckChoiceTests(unittest.TestCase):
             cards = player.hand + player.deck
             self.assertEqual(50, len(cards))
             self.assertTrue(
-                all(card.definition.code == "T-001" for card in cards)
+                all(card.definition.card_number == "T-001" for card in cards)
             )
 
     def test_start_game_can_choose_decks_independently(self):

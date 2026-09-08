@@ -545,7 +545,7 @@ class PygameApp:
 
                     if (
                         card is not None
-                        and card.definition.kind == 'character'
+                        and card.definition.card_type == 'character'
                     ):
                         selected_character = card
 

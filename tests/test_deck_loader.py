@@ -59,7 +59,7 @@ class DeckLoaderTests(unittest.TestCase):
         )
         self.assertTrue(
             all(
-                definition.code == "T-001"
+                definition.card_number == "T-001"
                 for definition in definitions
             )
         )
@@ -89,7 +89,7 @@ class DeckLoaderTests(unittest.TestCase):
         )
         self.assertTrue(
             all(
-                card.definition.code == "T-001"
+                card.definition.card_number == "T-001"
                 for card in cards
             )
         )
@@ -240,7 +240,7 @@ class MixedDeckLoaderTests(unittest.TestCase):
         self.assertEqual(
             42,
             sum(
-                card.definition.code == "T-001"
+                card.definition.card_number == "T-001"
                 for card in cards
             ),
         )
@@ -248,7 +248,7 @@ class MixedDeckLoaderTests(unittest.TestCase):
         self.assertEqual(
             8,
             sum(
-                card.definition.code == "T-002"
+                card.definition.card_number == "T-002"
                 for card in cards
             ),
         )

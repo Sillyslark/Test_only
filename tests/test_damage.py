@@ -25,7 +25,7 @@ def arrange_top_by_kinds(player, kinds):
         index = next(
             i
             for i, card in enumerate(remaining)
-            if card.definition.kind == kind
+            if card.definition.card_type.value == kind
         )
         selected.append(remaining.pop(index))
 

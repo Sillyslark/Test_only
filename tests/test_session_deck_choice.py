@@ -24,7 +24,7 @@ class SessionDeckChoiceTests(unittest.TestCase):
             cards = player.hand + player.deck
             self.assertEqual(50, len(cards))
             self.assertTrue(
-                all(card.definition.code == "T-001" for card in cards)
+                all(card.definition.card_number == "T-001" for card in cards)
             )
 
     def test_p1_and_p2_can_select_decks_independently(self):

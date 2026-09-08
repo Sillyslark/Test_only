@@ -15,7 +15,7 @@ from actions import (
     SwapStageSlotsAction,
 )
 from phases import PHASES
-from card_definition import Card, ClimaxDefinition
+from card_definition import CardType, Card, ClimaxDefinition
 from deck_loader import build_deck, resolve_deck_path, DEFAULT_TEST_DECK
 from rule_resolution import (
     STAGE_SLOTS,
@@ -417,6 +417,7 @@ class Session:
 
     def _choose_level_card(self, player_id, candidates):
         """Choice hook for Level Up.
+
 
         ``candidates`` is the bottom seven Clock cards, kept in storage
         top-first order. The current deterministic default chooses the first
@@ -990,7 +991,7 @@ class Session:
         card = next((c for c in player.hand if c.instance_id == action.card_id), None)
         if card is None:
             raise ValueError("请选择当前玩家的一张手牌")
-        if card.definition.kind != "character":
+        if card.definition.card_type is not CardType.CHARACTER:
             raise ValueError("该位置只能放置角色卡")
         if card.definition.level != 0 or card.definition.cost != 0:
             raise ValueError("当前测试版本仅支持 0 级 0 费角色，尚未实现等级检查和费用支付")

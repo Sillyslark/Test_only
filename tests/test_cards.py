@@ -4,7 +4,9 @@ import tempfile
 import unittest
 
 from card_definition import (
+    CardColor,
     CardDefinition,
+    CardType,
     CharacterDefinition,
     ClimaxDefinition,
 )
@@ -21,26 +23,26 @@ class CardLoadingTests(unittest.TestCase):
 
         self.assertIsInstance(definition, CardDefinition)
         self.assertIsInstance(definition, CharacterDefinition)
-        self.assertEqual("T-001", definition.code)
+        self.assertEqual("T-001", definition.card_number)
         self.assertEqual("测试", definition.name)
-        self.assertEqual("character", definition.kind)
-        self.assertEqual("yellow", definition.color)
+        self.assertIs(CardType.CHARACTER, definition.card_type)
+        self.assertIs(CardColor.YELLOW, definition.color)
         self.assertEqual(0, definition.level)
         self.assertEqual(0, definition.cost)
         self.assertEqual(500, definition.power)
         self.assertEqual(1, definition.soul)
         self.assertEqual((), definition.traits)
-        self.assertEqual((), definition.trigger_marks)
+        self.assertEqual((), definition.trigger_icons)
 
     def test_t002_climax_loads_from_json(self):
         definition = load_card("TEST/T-002.json")
 
         self.assertIsInstance(definition, ClimaxDefinition)
-        self.assertEqual("T-002", definition.code)
+        self.assertEqual("T-002", definition.card_number)
         self.assertEqual("测试CX", definition.name)
-        self.assertEqual("climax", definition.kind)
-        self.assertEqual("yellow", definition.color)
-        self.assertEqual((), definition.trigger_marks)
+        self.assertIs(CardType.CLIMAX, definition.card_type)
+        self.assertIs(CardColor.YELLOW, definition.color)
+        self.assertEqual((), definition.trigger_icons)
 
     def test_t002_has_no_character_only_fields(self):
         definition = load_card("TEST/T-002.json")
