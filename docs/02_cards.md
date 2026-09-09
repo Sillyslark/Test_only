@@ -196,3 +196,17 @@
 
 </details>
 
+<details>
+<summary><b>附录 B：Deck Recipe 与 Deck Construction</b></summary>
+
+- [打开附录 B 目录](02_cards/appendix_b/00_overview.md)
+
+<details>
+<summary>当前已定稿小节</summary>
+
+- [B.1 目的、术语与职责边界](02_cards/appendix_b/01_purpose_terminology_boundary.md)
+- [B.2 DeckRecipe 的数据结构](02_cards/appendix_b/02_deck_recipe_data_structure.md)
+
+</details>
+
+</details>
