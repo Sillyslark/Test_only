@@ -52,34 +52,33 @@
 </details>
 
 <details>
-<summary><b>B.3 DeckRecipe Loading 与检查管线</b></summary>
+<summary><b>B.3 DeckRecipe Loading 与 Data Validation</b></summary>
 
-- [打开 B.3 全文](03_loading_and_check_pipeline.md)
+- [打开 B.3 全文](03_loading_and_data_validation.md)
 
 <details>
 <summary>B.3 小节</summary>
 
 - B.3.1 总体流程
 - B.3.2 Load 的职责
-- B.3.3 Structural Check
-- B.3.4 Construction Reference Check
-- B.3.5 Card Reference Check
-- B.3.6 不自动修复输入
-- B.3.7 Deck Construction Legality Check
-- B.3.8 PASS / FAIL / SKIPPED
-- B.3.9 Check 应尽可能收集全部问题
-- B.3.10 DeckCheckResult
-- B.3.11 DeckCheckIssue
-- B.3.12 第一版的 severity
-- B.3.13 Import Gate
-- B.3.14 Debug 与 Deck Editor
-- B.3.15 本节结论
+- B.3.3 DeckRecipe Schema Validation
+- B.3.4 Reference Validation
+- B.3.5 Card Reference Validation
+- B.3.6 Construction / Title / Side Reference Validation
+- B.3.7 不自动修复输入
+- B.3.8 尽可能收集全部可可靠判断的问题
+- B.3.9 DeckRecipeValidationResult
+- B.3.10 DeckRecipeValidationIssue
+- B.3.11 Valid DeckRecipe
+- B.3.12 Debug 与 Deck Editor
+- B.3.13 与 Deck Legality 的边界
+- B.3.14 本节结论
 
 </details>
 
 </details>
 
-后续 B.4、B.5……将在各自内容定稿后继续加入本目录。
+附录 B 当前于 B.3 结束。Deck Construction Legality 与后续 Game Initialization 不属于本附录，将在游戏开始相关章节中独立定义。
 
 ---
 
