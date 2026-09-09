@@ -172,3 +172,27 @@
 - [打开本节全文](02_cards/13_本节命名结论.md)
 
 </details>
+
+<details>
+<summary><b>附录 A：Card Number 与 Card Catalog</b></summary>
+
+- [打开附录全文](02_cards/appendix_a_card_number_and_card_catalog.md)
+
+<details>
+<summary>附录小节</summary>
+
+- A.1 目的与范围
+- A.2 Card Number 的结构化表示
+- A.3 Base Card Number 与 Full Card Number
+- A.4 Card 的存储结构
+- A.5 Card Catalog
+- A.6 Card Number 的规则用途
+- A.7 Variant 扩展接口
+- A.8 Validation
+- A.9 测试要求
+- A.10 尚未决定的问题
+
+</details>
+
+</details>
+
