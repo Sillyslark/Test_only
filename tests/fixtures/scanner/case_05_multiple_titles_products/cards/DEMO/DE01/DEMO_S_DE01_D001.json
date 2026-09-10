@@ -1,0 +1,15 @@
+{
+  "card_number": {
+    "title_code": "DEMO",
+    "side": "S",
+    "product_code": "DE01",
+    "product_card_number": "D001"
+  },
+  "name": "测试高潮 C",
+  "card_type": "CLIMAX",
+  "color": "blue",
+  "trigger_icons": [
+    "soul"
+  ],
+  "abilities": []
+}

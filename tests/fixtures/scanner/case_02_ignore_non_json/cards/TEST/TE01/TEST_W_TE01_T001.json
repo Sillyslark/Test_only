@@ -1,0 +1,19 @@
+{
+  "card_number": {
+    "title_code": "TEST",
+    "side": "W",
+    "product_code": "TE01",
+    "product_card_number": "T001"
+  },
+  "name": "测试角色",
+  "card_type": "CHARACTER",
+  "color": "yellow",
+  "traits": [],
+  "level": 0,
+  "cost": 0,
+  "card_icons": [],
+  "power": 500,
+  "soul": 1,
+  "trigger_icons": [],
+  "abilities": []
+}

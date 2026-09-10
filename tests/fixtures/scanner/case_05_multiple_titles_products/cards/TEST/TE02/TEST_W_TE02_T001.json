@@ -1,0 +1,16 @@
+{
+  "card_number": {
+    "title_code": "TEST",
+    "side": "W",
+    "product_code": "TE02",
+    "product_card_number": "T001"
+  },
+  "name": "测试事件 B",
+  "card_type": "EVENT",
+  "color": "red",
+  "level": 1,
+  "cost": 0,
+  "card_icons": [],
+  "trigger_icons": [],
+  "abilities": []
+}
