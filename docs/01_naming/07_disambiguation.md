@@ -1,5 +1,8 @@
 ### 1.7 同名概念消歧原则
 
+<!-- SECTION_NAV_START -->
+[← 上一节](06_actions_choices_events.md) | [返回本章目录](README.md) | [下一节 →](08_official_terms_priority.md)
+<!-- SECTION_NAV_END -->
 | 名称 | 含义一 | 含义二或其他含义 | 规范示例 |
 | --- | --- | --- | --- |
 | Event | 事件卡 | 游戏事件 | `CardType.EVENT` / `GameEvent` |
@@ -18,3 +21,6 @@
 
 优先使用 `CardType`、`AbilityType`、`CardState`、`GameState`、`GameEvent`、`TriggerIcon`、`AbilityTrigger`、`AttackStep` 等能直接表达所属领域的名称。
 
+<!-- SECTION_NAV_START -->
+[← 上一节](06_actions_choices_events.md) | [返回本章目录](README.md) | [下一节 →](08_official_terms_priority.md)
+<!-- SECTION_NAV_END -->

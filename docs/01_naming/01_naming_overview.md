@@ -1,5 +1,8 @@
 ### 1.1 命名类别总览
 
+<!-- SECTION_NAV_START -->
+← 上一节 | [返回本章目录](README.md) | [下一节 →](02_official_and_project_concepts.md)
+<!-- SECTION_NAV_END -->
 本项目中的概念分为七个主要领域：卡片、玩家、场地、游戏流程、能力与结算、玩家操作、模拟器基础设施。
 
 | 领域 | 中文类别 | 官方概念 | 程序规范 | 主要用途 |
@@ -34,3 +37,6 @@
 | 模拟器基础设施 | 稳定标识 | 项目概念 | `..._id` | 跨操作、事件和 Replay 引用具体对象 |
 | 模拟器基础设施 | 状态摘要 | 项目概念 | `StateHash` | 验证游戏状态及 Replay 的确定性 |
 
+<!-- SECTION_NAV_START -->
+← 上一节 | [返回本章目录](README.md) | [下一节 →](02_official_and_project_concepts.md)
+<!-- SECTION_NAV_END -->

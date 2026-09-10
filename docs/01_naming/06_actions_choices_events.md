@@ -1,5 +1,8 @@
 ### 1.6 操作、选择与游戏事件
 
+<!-- SECTION_NAV_START -->
+[← 上一节](05_stable_identity.md) | [返回本章目录](README.md) | [下一节 →](07_disambiguation.md)
+<!-- SECTION_NAV_END -->
 应明确区分“当前能做什么”“实际提交了什么”“需要选择什么”“已经发生了什么”。
 
 ```text
@@ -18,3 +21,6 @@ LegalAction / Options
 
 `GameEvent` 不使用裸 `Event`，因为 Event 已经是 WS 官方卡片种类。
 
+<!-- SECTION_NAV_START -->
+[← 上一节](05_stable_identity.md) | [返回本章目录](README.md) | [下一节 →](07_disambiguation.md)
+<!-- SECTION_NAV_END -->

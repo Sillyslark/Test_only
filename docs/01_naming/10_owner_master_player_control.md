@@ -1,5 +1,8 @@
 ### 1.10 Owner、Master 与 Player Control
 
+<!-- SECTION_NAV_START -->
+[← 上一节](09_document_usage.md) | [返回本章目录](README.md) | 下一节 →
+<!-- SECTION_NAV_END -->
 必须区分以下三个概念：
 
 ```text
@@ -41,3 +44,7 @@ Card Owner / Master
 因此 Player Control 描述的是“谁代替某名 Player 提供决定”，而不是改变被控制 Player 的规则身份或其 Card 的 Owner / Master。
 
 `PlayerControl`、`decision_maker` 等具体程序结构暂不在第一节锁定。
+
+<!-- SECTION_NAV_START -->
+[← 上一节](09_document_usage.md) | [返回本章目录](README.md) | 下一节 →
+<!-- SECTION_NAV_END -->
