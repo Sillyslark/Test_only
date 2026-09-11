@@ -1,1 +1,0 @@
-"""WS Simulator presentation layer."""

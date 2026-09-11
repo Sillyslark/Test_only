@@ -1,0 +1,16 @@
+{
+  "card_number": {
+    "title_code": "TEST",
+    "side": "W",
+    "product_code": "TE01",
+    "product_card_number": "T003"
+  },
+  "name": "测试高潮",
+  "card_type": "CLIMAX",
+  "color": "blue",
+  "trigger_icons": [
+    "soul",
+    "soul"
+  ],
+  "abilities": []
+}

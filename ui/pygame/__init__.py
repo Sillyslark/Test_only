@@ -1,1 +1,0 @@
-"""Pygame presentation adapter."""
